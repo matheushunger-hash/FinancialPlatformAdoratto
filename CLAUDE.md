@@ -316,3 +316,30 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - CSV export pattern: client-side `Blob` + temporary `<a>` element — no server endpoint needed since data is already in memory (max 25 items/page). UTF-8 BOM (`\uFEFF`) prefix ensures Excel reads accents correctly. Semicolon delimiter is the Brazilian Excel standard
 - `escapeCSV()` helper: wraps values containing semicolons, quotes, or newlines in double-quotes, doubling inner quotes per RFC 4180
 - `AlertDialog` for destructive/batch confirmations vs `Dialog` for data-entry modals (payment date) — semantic distinction between "are you sure?" and "provide input"
+
+### 2026-02-21 — ADR-012: Edit Payable (Editar Título a Pagar) — CLOSED
+
+**What went well:**
+- Full edit flow: GET/PATCH API route at `/api/payables/[id]`, edit mode in `PayableForm`, data fetching in `PayableSheet`
+- Sheet fetches detail by ID (not from table data) — keeps the list response lean while the edit form gets metadata fields (`createdByName`, `approvedByName`, `paidAt`)
+- Reused the same `payableFormSchema` for both create and edit — no partial schema needed, API ignores `supplierId` on PATCH
+- Status guard on PATCH: only `PENDING`, `APPROVED`, and `REJECTED` are editable — terminal statuses (`PAID`, `OVERDUE`, `CANCELLED`) return 400
+- Supplier combobox locked in edit mode via `disabled` prop — prevents changing which supplier a payable belongs to
+- Auto-sync disabled in edit mode: `userEditedPayValue.current = true` prevents the `useEffect` from overwriting the existing pay value on first render
+- Read-only metadata panel at the top of the edit form: "Criado por", "Criado em", "Aprovado por", "Aprovado em", "Pago em"
+- "Editar" dropdown item only appears for editable statuses, with a `DropdownMenuSeparator` before transition actions
+- `npx tsc --noEmit` passes with zero errors, 7 files changed (6 modified, 1 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this ADR — patterns were well-established from ADR-005 (supplier CRUD) and ADR-010 (transitions)
+
+**Patterns established:**
+- Detail API route pattern: `GET /api/payables/[id]` returns `PayableDetail` (extends `PayableListItem` with metadata) — separate from the list endpoint to keep list responses lean
+- Name lookup pattern: `prisma.user.findUnique({ where: { id: payable.userId }, select: { name: true } })` to resolve UUID → display name for `createdByName` / `approvedByName`
+- Dual-mode form: single component handles both create and edit via `payable: PayableDetail | null` prop — `isEditing` derived boolean drives all conditional behavior
+- Form `key` prop for mode switching: `key={payable?.id ?? "new"}` forces React to unmount/remount the form when switching between payables — necessary because `react-hook-form`'s `defaultValues` only apply on mount
+- Date extraction from ISO strings: `payable.issueDate.split("T")[0]` to get `yyyy-MM-dd` for form `defaultValues`
+- Currency pre-fill: `formatCurrencyBR(Number(payable.amount))` to convert API decimal strings (`"1234.56"`) to BR display format (`"1.234,56"`)
+- `EDITABLE_STATUSES` constant (`as const` tuple) shared between API (status guard) and UI (conditional menu item) — single source of truth
+- Sheet with data fetching: `useEffect` triggered by `open + payableId` fetches detail, manages loading/error/data states, resets on close
+- `disabled` prop on combobox: `disabled` on Button + `Popover open={disabled ? false : open}` prevents both visual interaction and programmatic opening
