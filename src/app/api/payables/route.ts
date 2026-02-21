@@ -21,6 +21,18 @@ const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
   status: (order) => ({ status: order }),
 };
 
+// Whitelist of valid filter values — unknown values are silently ignored
+const VALID_STATUSES = ["PENDING", "PAID", "OVERDUE", "CANCELLED"];
+const VALID_CATEGORIES = ["REVENDA", "DESPESA"];
+const VALID_METHODS = [
+  "BOLETO",
+  "PIX",
+  "TRANSFERENCIA",
+  "CARTAO",
+  "DINHEIRO",
+  "CHEQUE",
+];
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -45,17 +57,57 @@ export async function GET(request: NextRequest) {
   const buildOrderBy = SORT_MAP[sortParam] ?? SORT_MAP.dueDate;
   const orderBy = buildOrderBy(orderParam);
 
-  // Search — filter across description, supplier name, and invoice number
+  // Build combined WHERE clause — each active filter pushes a condition.
+  // All conditions are ANDed: search "Acme" + status OVERDUE → both must match.
+  const conditions: Record<string, unknown>[] = [];
+
+  // Search — expanded to include notes and supplier document (CNPJ/CPF)
   const searchTerm = searchParams.get("search")?.trim() || "";
-  const where = searchTerm
-    ? {
-        OR: [
-          { description: { contains: searchTerm, mode: "insensitive" as const } },
-          { supplier: { name: { contains: searchTerm, mode: "insensitive" as const } } },
-          { invoiceNumber: { contains: searchTerm, mode: "insensitive" as const } },
-        ],
-      }
-    : {};
+  if (searchTerm) {
+    conditions.push({
+      OR: [
+        { description: { contains: searchTerm, mode: "insensitive" } },
+        { supplier: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { invoiceNumber: { contains: searchTerm, mode: "insensitive" } },
+        { notes: { contains: searchTerm, mode: "insensitive" } },
+        { supplier: { document: { contains: searchTerm, mode: "insensitive" } } },
+      ],
+    });
+  }
+
+  // Filters — validated against whitelists, unknown values silently ignored
+  const statusParam = searchParams.get("status") || "";
+  if (VALID_STATUSES.includes(statusParam)) {
+    conditions.push({ status: statusParam });
+  }
+
+  const tagParam = searchParams.get("tag")?.trim() || "";
+  if (tagParam) {
+    conditions.push({ tags: { hasSome: [tagParam] } });
+  }
+
+  const categoryParam = searchParams.get("category") || "";
+  if (VALID_CATEGORIES.includes(categoryParam)) {
+    conditions.push({ category: categoryParam });
+  }
+
+  const methodParam = searchParams.get("paymentMethod") || "";
+  if (VALID_METHODS.includes(methodParam)) {
+    conditions.push({ paymentMethod: methodParam });
+  }
+
+  // Date range — append time components to avoid UTC timezone shift (ADR-008 lesson)
+  const dueDateFrom = searchParams.get("dueDateFrom") || "";
+  if (dueDateFrom) {
+    conditions.push({ dueDate: { gte: new Date(dueDateFrom + "T00:00:00") } });
+  }
+
+  const dueDateTo = searchParams.get("dueDateTo") || "";
+  if (dueDateTo) {
+    conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59") } });
+  }
+
+  const where = conditions.length > 0 ? { AND: conditions } : {};
 
   try {
     const [total, payables] = await Promise.all([

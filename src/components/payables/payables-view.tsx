@@ -6,9 +6,11 @@ import { Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PayablesTable } from "@/components/payables/payables-table";
+import { PayablesFilters } from "@/components/payables/payables-filters";
 import { PayablesPagination } from "@/components/payables/payables-pagination";
 import { PayableSheet } from "@/components/payables/payable-sheet";
 import type {
+  PayableFilters,
   PayableListItem,
   PayablesListResponse,
 } from "@/lib/payables/types";
@@ -34,6 +36,9 @@ export function PayablesView() {
   // Sort state — default to dueDate descending (most urgent first)
   const [sort, setSort] = useState("dueDate");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
+
+  // Filter state — empty object means "no filters applied"
+  const [filters, setFilters] = useState<PayableFilters>({});
 
   // Debounce timer ref — we don't want to fetch on every keystroke
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,6 +68,14 @@ export function PayablesView() {
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
 
+      // Append active filter params
+      if (filters.status) params.set("status", filters.status);
+      if (filters.tag) params.set("tag", filters.tag);
+      if (filters.category) params.set("category", filters.category);
+      if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
+      if (filters.dueDateFrom) params.set("dueDateFrom", filters.dueDateFrom);
+      if (filters.dueDateTo) params.set("dueDateTo", filters.dueDateTo);
+
       const res = await fetch(`/api/payables?${params}`);
       if (!res.ok) throw new Error("Erro ao carregar títulos");
 
@@ -75,7 +88,7 @@ export function PayablesView() {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch, sort, order]);
+  }, [page, debouncedSearch, sort, order, filters]);
 
   useEffect(() => {
     fetchPayables();
@@ -90,6 +103,11 @@ export function PayablesView() {
   function handleSuccess() {
     setSheetOpen(false);
     fetchPayables();
+  }
+
+  function handleFiltersChange(newFilters: PayableFilters) {
+    setFilters(newFilters);
+    setPage(1); // Reset to page 1 when filters change
   }
 
   function handleSortChange(columnId: string) {
@@ -111,7 +129,7 @@ export function PayablesView() {
         <div className="relative w-full sm:max-w-sm">
           <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
           <Input
-            placeholder="Buscar por descrição, fornecedor ou NF..."
+            placeholder="Buscar por descrição, fornecedor, CNPJ, NF..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -123,6 +141,12 @@ export function PayablesView() {
         </Button>
       </div>
 
+      {/* Filters: quick pills + advanced dropdowns + date range */}
+      <PayablesFilters
+        filters={filters}
+        onFiltersChange={handleFiltersChange}
+      />
+
       {/* Table */}
       <PayablesTable
         payables={payables}
@@ -132,15 +156,14 @@ export function PayablesView() {
         onSortChange={handleSortChange}
       />
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <PayablesPagination
-          page={page}
-          totalPages={totalPages}
-          total={total}
-          onPageChange={setPage}
-        />
-      )}
+      {/* Pagination — always visible so user sees the count when filters reduce results */}
+      <PayablesPagination
+        page={page}
+        totalPages={totalPages}
+        total={total}
+        currentCount={payables.length}
+        onPageChange={setPage}
+      />
 
       {/* Side sheet (create form) */}
       <PayableSheet

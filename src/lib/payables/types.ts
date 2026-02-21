@@ -22,6 +22,25 @@ export interface PayableListItem {
   updatedAt: string;
 }
 
+// Filter options for narrowing down the payables list.
+// Each field is optional — undefined means "show all" for that dimension.
+// Quick-filter pills set status OR tag (mutually exclusive).
+// Advanced filters (category, paymentMethod, dates) are independent.
+export interface PayableFilters {
+  status?: "PENDING" | "PAID" | "OVERDUE" | "CANCELLED";
+  tag?: string;
+  category?: "REVENDA" | "DESPESA";
+  paymentMethod?:
+    | "BOLETO"
+    | "PIX"
+    | "TRANSFERENCIA"
+    | "CARTAO"
+    | "DINHEIRO"
+    | "CHEQUE";
+  dueDateFrom?: string; // yyyy-MM-dd
+  dueDateTo?: string; // yyyy-MM-dd
+}
+
 // Will be used by ADR-008 (table), defined now for the API response
 export interface PayablesListResponse {
   payables: PayableListItem[];
