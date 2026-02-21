@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { supplierFormSchema, stripDocument } from "@/lib/suppliers/validation";
 import type { SuppliersListResponse } from "@/lib/suppliers/types";
 
@@ -148,6 +149,13 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (err) {
+    // P2002 = unique constraint violation — race condition safety net
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return NextResponse.json(
+        { error: "Já existe um fornecedor com este documento", field: "document" },
+        { status: 409 },
+      );
+    }
     console.error("[POST /api/suppliers] error:", err);
     const message = err instanceof Error ? err.message : "Erro interno do servidor";
     return NextResponse.json({ error: message }, { status: 500 });
