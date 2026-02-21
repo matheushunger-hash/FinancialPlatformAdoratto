@@ -11,7 +11,8 @@
 - **Language**: UI text in Portuguese (pt-BR), code/comments in English
 - **Commit style**: `feat:`, `fix:`, etc. — reference ADR number in parentheses
 - **Server Actions**: use `"use server"` in dedicated files under `src/lib/`
-- **Forms**: use React 19 `useActionState` for progressive enhancement
+- **Forms (simple)**: use React 19 `useActionState` for progressive enhancement (e.g., login)
+- **Forms (complex)**: use `react-hook-form` + `zodResolver` + Zod for 5+ fields with cross-field validation (e.g., supplier form)
 - **Route protection**: defense in depth — middleware (primary) + layout (fallback)
 - **User sync**: Supabase Auth manages credentials, Prisma `users` table stores profile data, shared UUID as PK
 
@@ -82,3 +83,29 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - `suppressHydrationWarning` on `<html>` is required when using `next-themes` (class-based theming)
 - Active nav link detection: exact match for `/dashboard`, prefix match for sub-pages
 - User info (avatar + dropdown + logout) lives in `NavUser` sidebar footer component
+
+### 2026-02-21 — ADR-005: Supplier CRUD (Fornecedores) — CLOSED
+
+**What went well:**
+- Full supplier CRUD: paginated table with search, side-sheet form, create/edit/soft-delete
+- CNPJ/CPF check-digit validation with proper algorithms (weights, modulo 11)
+- First API Routes in the codebase (`/api/suppliers`, `/api/suppliers/[id]`) with auth on every handler
+- react-hook-form + Zod for complex form (12 fields, 4 sections, cross-field validation)
+- Document uniqueness enforced at both app level (friendly 409 error) and DB level (`@@unique`)
+- Debounced search (300ms) to avoid excessive API calls
+- Soft delete via `active` boolean — deactivation checks for open payables before proceeding
+
+**Mistakes caught — avoid next time:**
+1. Zod 4 uses `error` (not `required_error`) in `z.enum()` options — Zod 3 docs are misleading
+2. `prisma migrate dev` fails when existing migrations reference Supabase-only schemas (`auth`, `storage`) — use `prisma db push` instead for development
+3. Optional string fields in Zod need `.optional().or(z.literal(""))` to accept empty strings from form inputs
+
+**Patterns established:**
+- API Routes authenticate via `createClient()` + `supabase.auth.getUser()` — return 401 if no user
+- API route params are a Promise in Next.js 16 — must `await params` before accessing `id`
+- Validation lives in `src/lib/<domain>/validation.ts`, shared types in `src/lib/<domain>/types.ts`
+- Documents stored as raw digits in DB; formatting (dots/slashes/dashes) is a UI concern
+- Zod `superRefine` for cross-field validation (document validity depends on document type)
+- Orchestrator pattern: one Client Component owns state, passes data/callbacks to "dumb" children
+- Server-side uniqueness errors mapped to form field errors via `form.setError()`
+- Sheet component with `sm:max-w-lg` override for wider forms (default `sm:max-w-sm` is too narrow)
