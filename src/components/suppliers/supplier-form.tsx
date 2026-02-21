@@ -80,12 +80,11 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
     },
   });
 
-  // Strip formatting when the user focuses the input — so they work with raw digits
-  function handleDocumentFocus() {
-    const raw = stripDocument(form.getValues("document"));
-    if (raw !== form.getValues("document")) {
-      form.setValue("document", raw);
-    }
+  // Strip non-digits and cap at the max digit count on every change (typing or paste)
+  function handleDocumentChange(value: string) {
+    const maxDigits = form.getValues("documentType") === "CNPJ" ? 14 : 11;
+    const digits = stripDocument(value).slice(0, maxDigits);
+    form.setValue("document", digits);
   }
 
   // Format the document field when the user leaves the input
@@ -216,12 +215,7 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
                           : "000.000.000-00"
                       }
                       {...field}
-                      maxLength={
-                        form.watch("documentType") === "CNPJ" ? 14 : 11
-                      }
-                      onFocus={() => {
-                        handleDocumentFocus();
-                      }}
+                      onChange={(e) => handleDocumentChange(e.target.value)}
                       onBlur={() => {
                         field.onBlur();
                         handleDocumentBlur();
