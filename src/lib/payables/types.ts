@@ -41,6 +41,19 @@ export interface PayableFilters {
   dueDateTo?: string; // yyyy-MM-dd
 }
 
+// Extended detail for the edit form — includes metadata not in the list response.
+// Fetched by GET /api/payables/[id] when the user clicks "Editar".
+export interface PayableDetail extends PayableListItem {
+  approvedBy: string | null;
+  approvedAt: string | null;
+  paidAt: string | null;
+  createdByName: string; // Looked up from the users table
+  approvedByName: string | null; // Looked up from the users table (if approved)
+}
+
+// Only these statuses allow editing — terminal statuses are locked.
+export const EDITABLE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
+
 // Will be used by ADR-008 (table), defined now for the API response
 export interface PayablesListResponse {
   payables: PayableListItem[];

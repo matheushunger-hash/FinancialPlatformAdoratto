@@ -15,6 +15,7 @@ import {
   CheckCircle,
   CreditCard,
   MoreHorizontal,
+  Pencil,
   RotateCcw,
   XCircle,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -39,7 +41,7 @@ import {
 } from "@/components/ui/table";
 import { formatCNPJ, formatCPF } from "@/lib/suppliers/validation";
 import { getAvailableActions } from "@/lib/payables/transitions";
-import type { PayableListItem } from "@/lib/payables/types";
+import { EDITABLE_STATUSES, type PayableListItem } from "@/lib/payables/types";
 
 // =============================================================================
 // PayablesTable — TanStack Table rendering payables with shadcn UI
@@ -60,6 +62,7 @@ interface PayablesTableProps {
   userRole: string;
   onTransition: (id: string, action: string) => void;
   onRequestPay: (id: string) => void;
+  onEdit: (id: string) => void;
   rowSelection: RowSelectionState;
   onRowSelectionChange: (selection: RowSelectionState) => void;
 }
@@ -107,6 +110,7 @@ function buildColumns(
   userRole: string,
   onTransition: (id: string, action: string) => void,
   onRequestPay: (id: string) => void,
+  onEdit: (id: string) => void,
 ) {
   return [
     // 0. Checkbox — select row (ADR-011)
@@ -275,13 +279,16 @@ function buildColumns(
       enableSorting: false,
     }),
 
-    // 10. Ações — dynamic based on status + role (ADR-010)
+    // 10. Ações — edit + dynamic status transitions (ADR-010, ADR-012)
     columnHelper.display({
       id: "actions",
       header: () => <span className="sr-only">Ações</span>,
       cell: (info) => {
         const payable = info.row.original;
         const actions = getAvailableActions(payable.status, userRole);
+        const canEdit = EDITABLE_STATUSES.includes(
+          payable.status as (typeof EDITABLE_STATUSES)[number],
+        );
 
         return (
           <DropdownMenu>
@@ -292,6 +299,13 @@ function buildColumns(
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canEdit && (
+                <DropdownMenuItem onClick={() => onEdit(payable.id)}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Editar
+                </DropdownMenuItem>
+              )}
+              {canEdit && actions.length > 0 && <DropdownMenuSeparator />}
               {actions.map((t) => (
                 <DropdownMenuItem
                   key={t.action}
@@ -305,7 +319,7 @@ function buildColumns(
                   {t.label}
                 </DropdownMenuItem>
               ))}
-              {actions.length === 0 && (
+              {!canEdit && actions.length === 0 && (
                 <DropdownMenuItem disabled>
                   Sem ações disponíveis
                 </DropdownMenuItem>
@@ -334,12 +348,13 @@ export function PayablesTable({
   userRole,
   onTransition,
   onRequestPay,
+  onEdit,
   rowSelection,
   onRowSelectionChange,
 }: PayablesTableProps) {
   // Build columns with callbacks — memoize via useMemo would be an option,
   // but since TanStack Table recreates on every render anyway, it's fine here.
-  const columns = buildColumns(userRole, onTransition, onRequestPay);
+  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit);
 
   // Convert our sort/order props into TanStack's SortingState format
   const sorting: SortingState = [{ id: sort, desc: order === "desc" }];

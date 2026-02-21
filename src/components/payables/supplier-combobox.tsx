@@ -46,9 +46,10 @@ interface Supplier {
 interface SupplierComboboxProps {
   value: string;
   onChange: (value: string) => void;
+  disabled?: boolean;
 }
 
-export function SupplierCombobox({ value, onChange }: SupplierComboboxProps) {
+export function SupplierCombobox({ value, onChange, disabled }: SupplierComboboxProps) {
   const [open, setOpen] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,12 +84,13 @@ export function SupplierCombobox({ value, onChange }: SupplierComboboxProps) {
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
           role="combobox"
           aria-expanded={open}
+          disabled={disabled}
           className="w-full justify-between font-normal"
         >
           {selected ? selected.name : "Selecionar fornecedor..."}

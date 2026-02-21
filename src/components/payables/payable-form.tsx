@@ -39,21 +39,27 @@ import {
   type PayableFormData,
 } from "@/lib/payables/validation";
 import { SupplierCombobox } from "@/components/payables/supplier-combobox";
+import type { PayableDetail } from "@/lib/payables/types";
 
 // =============================================================================
-// PayableForm — The creation form for payables (títulos a pagar)
+// PayableForm — Create or edit a payable (título a pagar)
 // =============================================================================
 // Uses react-hook-form + Zod for validation, same pattern as SupplierForm.
-// Form has 4 sections:
+// Supports two modes:
+//   - Create (payable === null): empty form, POST to /api/payables
+//   - Edit (payable !== null): pre-filled form, PATCH to /api/payables/[id]
+//
+// Form has 4 sections (+ metadata in edit mode):
+//   0. Metadata (edit only): Criado por, Aprovado por, Pago em (read-only)
 //   1. Dados Principais (supplier, description, category, invoice number)
 //   2. Datas e Valores (dates, amounts, payment method)
 //   3. Tags (toggle badges for fixed tag list)
 //   4. Observações (notes)
 //
 // Key behaviors:
-//   - When user enters "valor original", "valor a pagar" auto-fills to match
-//   - If user manually edits "valor a pagar", auto-fill stops
-//   - Juros/multa line shows the difference in real-time
+//   - In create mode: payValue auto-syncs with amount
+//   - In edit mode: auto-sync is disabled (userEditedPayValue starts true)
+//   - Supplier combobox is disabled in edit mode (can't change supplier)
 //   - Currency inputs format on blur (Brazilian format: 1.234,56)
 //   - Date pickers use pt-BR locale
 // =============================================================================
@@ -93,31 +99,48 @@ function formatCurrencyBR(value: number): string {
 }
 
 interface PayableFormProps {
+  payable: PayableDetail | null; // null = create mode, object = edit mode
   onSuccess: () => void;
 }
 
-export function PayableForm({ onSuccess }: PayableFormProps) {
+export function PayableForm({ payable, onSuccess }: PayableFormProps) {
   const [submitting, setSubmitting] = useState(false);
+  const isEditing = payable !== null;
 
   // Track whether the user has manually edited payValue.
-  // If they haven't, we auto-sync payValue to match amount.
-  const userEditedPayValue = useRef(false);
+  // In create mode: starts false (auto-sync enabled).
+  // In edit mode: starts true (skip auto-sync so existing value is preserved).
+  const userEditedPayValue = useRef(isEditing);
 
   const form = useForm<PayableFormData>({
     resolver: zodResolver(payableFormSchema),
-    defaultValues: {
-      supplierId: "",
-      description: "",
-      category: undefined,
-      issueDate: "",
-      dueDate: "",
-      amount: "",
-      payValue: "",
-      paymentMethod: undefined,
-      invoiceNumber: "",
-      notes: "",
-      tags: [],
-    },
+    defaultValues: isEditing
+      ? {
+          supplierId: payable.supplierId,
+          description: payable.description,
+          category: payable.category as "REVENDA" | "DESPESA",
+          issueDate: payable.issueDate.split("T")[0],
+          dueDate: payable.dueDate.split("T")[0],
+          amount: formatCurrencyBR(Number(payable.amount)),
+          payValue: formatCurrencyBR(Number(payable.payValue)),
+          paymentMethod: payable.paymentMethod as PayableFormData["paymentMethod"],
+          invoiceNumber: payable.invoiceNumber ?? "",
+          notes: payable.notes ?? "",
+          tags: payable.tags,
+        }
+      : {
+          supplierId: "",
+          description: "",
+          category: undefined,
+          issueDate: "",
+          dueDate: "",
+          amount: "",
+          payValue: "",
+          paymentMethod: undefined,
+          invoiceNumber: "",
+          notes: "",
+          tags: [],
+        },
   });
 
   // Auto-sync payValue when amount changes (if user hasn't manually edited it)
@@ -149,9 +172,12 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
   async function onSubmit(data: PayableFormData) {
     setSubmitting(true);
 
+    const url = isEditing ? `/api/payables/${payable.id}` : "/api/payables";
+    const method = isEditing ? "PATCH" : "POST";
+
     try {
-      const res = await fetch("/api/payables", {
-        method: "POST",
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
@@ -164,14 +190,16 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
           toast.error(`Erro do servidor (${res.status})`);
           return;
         }
-        toast.error(errorData.error || "Erro ao criar título");
+        toast.error(
+          errorData.error || (isEditing ? "Erro ao salvar alterações" : "Erro ao criar título"),
+        );
         return;
       }
 
-      toast.success("Título criado com sucesso");
+      toast.success(isEditing ? "Título atualizado com sucesso" : "Título criado com sucesso");
       onSuccess();
     } catch {
-      toast.error("Erro ao criar título");
+      toast.error(isEditing ? "Erro ao salvar alterações" : "Erro ao criar título");
     } finally {
       setSubmitting(false);
     }
@@ -183,6 +211,52 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
         onSubmit={form.handleSubmit(onSubmit)}
         className="space-y-6 px-4 pb-4"
       >
+        {/* ============================================================= */}
+        {/* Section 0: Metadata (edit mode only)                           */}
+        {/* ============================================================= */}
+        {isEditing && (
+          <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Criado por</span>
+              <span>{payable.createdByName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Criado em</span>
+              <span>
+                {format(new Date(payable.createdAt), "dd/MM/yyyy", {
+                  locale: ptBR,
+                })}
+              </span>
+            </div>
+            {payable.approvedByName && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Aprovado por</span>
+                <span>{payable.approvedByName}</span>
+              </div>
+            )}
+            {payable.approvedAt && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Aprovado em</span>
+                <span>
+                  {format(new Date(payable.approvedAt), "dd/MM/yyyy", {
+                    locale: ptBR,
+                  })}
+                </span>
+              </div>
+            )}
+            {payable.paidAt && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Pago em</span>
+                <span>
+                  {format(new Date(payable.paidAt), "dd/MM/yyyy", {
+                    locale: ptBR,
+                  })}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ============================================================= */}
         {/* Section 1: Dados Principais                                    */}
         {/* ============================================================= */}
@@ -202,6 +276,7 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
                   <SupplierCombobox
                     value={field.value}
                     onChange={field.onChange}
+                    disabled={isEditing}
                   />
                 </FormControl>
                 <FormMessage />
@@ -540,7 +615,7 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
         {/* Submit button */}
         <Button type="submit" className="w-full" disabled={submitting}>
           {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Criar Título
+          {isEditing ? "Salvar Alterações" : "Criar Título"}
         </Button>
       </form>
     </Form>

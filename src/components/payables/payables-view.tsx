@@ -52,6 +52,9 @@ export function PayablesView({ userRole }: PayablesViewProps) {
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  // Edit mode state — stores the payable ID being edited (ADR-012)
+  const [editingPayableId, setEditingPayableId] = useState<string | null>(null);
+
   // Payment modal state — stores the payable ID that is being paid (ADR-010)
   const [payingPayableId, setPayingPayableId] = useState<string | null>(null);
 
@@ -129,10 +132,17 @@ export function PayablesView({ userRole }: PayablesViewProps) {
   // --- Handlers ---
 
   function handleNew() {
+    setEditingPayableId(null); // Ensure we're in create mode
+    setSheetOpen(true);
+  }
+
+  function handleEdit(id: string) {
+    setEditingPayableId(id);
     setSheetOpen(true);
   }
 
   function handleSuccess() {
+    setEditingPayableId(null);
     setSheetOpen(false);
     fetchPayables();
   }
@@ -285,6 +295,7 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         userRole={userRole}
         onTransition={handleTransition}
         onRequestPay={(id) => setPayingPayableId(id)}
+        onEdit={handleEdit}
         rowSelection={rowSelection}
         onRowSelectionChange={setRowSelection}
       />
@@ -298,11 +309,15 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         onPageChange={setPage}
       />
 
-      {/* Side sheet (create form) */}
+      {/* Side sheet (create / edit form — ADR-012) */}
       <PayableSheet
         open={sheetOpen}
-        onOpenChange={setSheetOpen}
+        onOpenChange={(open) => {
+          setSheetOpen(open);
+          if (!open) setEditingPayableId(null); // Clear edit state on manual close
+        }}
         onSuccess={handleSuccess}
+        payableId={editingPayableId}
       />
 
       {/* Payment date modal — single item (ADR-010) */}
