@@ -133,3 +133,28 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - For no-document imports, use `PENDENTE-NNN` placeholders — clearly identifiable in the UI as needing real documents later
 - npm script naming: `db:import-suppliers` follows the `db:*` convention for database operations
 - Business data files (spreadsheets) go in `/planilhabase/` and are gitignored
+
+### 2026-02-21 — ADR-007: Payable Creation Form (Contas a Pagar) — CLOSED
+
+**What went well:**
+- Full payable creation flow: schema evolution, Zod validation, API routes, side-sheet form with 4 sections
+- Clean Prisma schema evolution via `db push` (0 existing rows = safe to change column types)
+- Searchable supplier combobox using shadcn pattern (Popover + Command/cmdk) — fetches all, filters client-side
+- Brazilian currency parsing helper (`parseCurrency`) handles `1.234,56` and `1234,56` and `1234.56`
+- Auto-sync between "valor original" and "valor a pagar" using `useRef` flag — stops when user manually edits
+- Date pickers with `pt-BR` locale, tag toggles with clickable Badge components
+- Orchestrator (`payables-view.tsx`) designed for easy ADR-008 extension — just add table + pagination
+
+**Mistakes caught — avoid next time:**
+1. After `prisma db push`, you must also run `prisma generate` to update the TypeScript types — otherwise `tsc` still sees the old model fields and every new field/enum shows as "does not exist"
+2. Zod's `z.array(z.string()).default([])` creates an input/output type mismatch with react-hook-form's `zodResolver` — the input type allows `undefined` but the output is always `string[]`, causing a resolver type error. Fix: remove `.default([])` from Zod and set the default in `useForm`'s `defaultValues` instead
+
+**Patterns established:**
+- Combobox pattern: `Popover` + `Command` (cmdk) for searchable dropdowns — width set via `w-[--radix-popover-trigger-width]` to match trigger
+- Currency fields flow: string in form → `parseCurrency()` in API → Prisma `Decimal` in DB
+- Currency formatting on blur: `toLocaleString("pt-BR", { minimumFractionDigits: 2 })` for display
+- Date picker pattern: `Popover` + `Calendar` with `locale={ptBR}`, store as `yyyy-MM-dd` string in form, convert to `Date` in API
+- Auto-sync between related form fields: use `useRef` boolean to track whether user has manually edited the dependent field
+- Tags as clickable `Badge` components toggling values in a `string[]` — no separate DB table needed for fixed options
+- Juros/multa (interest/penalty) is calculated in real-time (`payValue - amount`) and displayed but NOT stored in DB
+- Payable domain files follow the same structure as suppliers: `src/lib/payables/` (validation + types), `src/components/payables/` (UI), `src/app/api/payables/` (API)
