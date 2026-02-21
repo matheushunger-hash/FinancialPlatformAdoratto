@@ -15,6 +15,7 @@
 - **Forms (complex)**: use `react-hook-form` + `zodResolver` + Zod for 5+ fields with cross-field validation (e.g., supplier form)
 - **Route protection**: defense in depth — middleware (primary) + layout (fallback)
 - **User sync**: Supabase Auth manages credentials, Prisma `users` table stores profile data, shared UUID as PK
+- **Tenant isolation**: all read queries scope by `tenantId` (org), `userId` is audit-only (createdBy). Auth via `getAuthContext()` in `src/lib/auth/context.ts`
 
 ## Important: Prisma 7.x Requires Driver Adapter
 Prisma 7.x uses a WASM-based query compiler by default. `new PrismaClient()` without an adapter will fail with:
@@ -38,8 +39,10 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Located at `prisma/seed.ts`, run with `npm run db:seed`
 - Requires `SUPABASE_SERVICE_ROLE_KEY` and `SEED_PASSWORD` in `.env`
 - Idempotent: checks for existing Auth users, uses Prisma `upsert`
+- Creates/finds "Adoratto" tenant, assigns `tenantId` to all seeded users
 - Current users: Matheus (ADMIN), Gabriel (ADMIN), Wellington (USER) — all @superadoratto.com.br
 - Password reset: `NEW_PASSWORD="..." npm run db:reset-passwords` (uses Supabase Admin API)
+- Tenant backfill: `npm run db:backfill-tenant` (one-time script, already run)
 
 ---
 
@@ -262,3 +265,29 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - User role fetched in Server Component page (`contas-a-pagar/page.tsx`) and passed as prop — necessary because Next.js App Router doesn't share data between layout and page
 - Terminal statuses (`PAID`, `OVERDUE`, `CANCELLED`) have no entries in `TRANSITIONS` — `getAvailableActions()` returns `[]`, dropdown shows "Sem ações disponíveis"
 - `STATUS_CONFIG` extended with `APPROVED` (default/blue badge) and `REJECTED` (destructive/red badge) — consistent badge rendering pattern
+
+### 2026-02-21 — Organization-Scoped Tenant Isolation — CLOSED
+
+**What went well:**
+- Replaced per-user scoping (`userId`) with per-organization scoping (`tenantId`) across all API routes — team members now see the same data
+- Safe two-phase schema migration: Phase 1 adds nullable `tenantId`, backfill script fills it, Phase 2 makes it required — zero downtime, zero data loss
+- Centralized `getAuthContext()` helper (`src/lib/auth/context.ts`) replaced 6-8 lines of duplicated auth boilerplate per route with a 2-line call returning `{ userId, tenantId, role }`
+- Compound unique constraint `@@unique([tenantId, document])` on suppliers — different orgs can have suppliers with the same CNPJ
+- `@@index([tenantId])` on payables for efficient tenant-scoped queries
+- Backfill script successfully migrated all 226 existing rows (3 users, 219 suppliers, 4 payables) to the "Adoratto" tenant
+- Seed and import scripts updated to create/reference tenant — fully forward-compatible
+- `npx tsc --noEmit` passes with zero errors, 10 files changed (8 modified, 2 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. **`prisma db push` warns about data loss when replacing unique constraints** — changing `@@unique([document])` to `@@unique([tenantId, document])` requires `--accept-data-loss` flag because Prisma drops the old constraint. This is safe when you know the data is clean, but always verify first
+2. **`@ts-expect-error` doesn't work on object properties inside function arguments** — it attaches to the next *statement*, not the next *property*. For suppressing type errors on specific properties (like `tenantId: null` after making the field required), use `as any` cast on the value instead
+3. **One-time migration scripts become type-incompatible after Phase 2** — the backfill script queries `{ tenantId: null }` but Phase 2 makes `tenantId` required, so Prisma types reject `null`. Accept this with `as any` and document why
+
+**Patterns established:**
+- **Tenant isolation rule (UPDATED)**: every Prisma query in API routes must include `tenantId: ctx.tenantId` in its `where` clause (replaces the old `userId: user.id` rule from the Security Fix session)
+- **`userId` is now audit-only**: included in `create` data to track "who created this" but never used for access control queries
+- **`tenantId` is the access control dimension**: controls "which org owns this" — all read/write queries scope by it
+- **`getAuthContext()` pattern**: single function returns `{ userId, tenantId, role }` or `null` — replaces raw Supabase `createClient()` + `getUser()` + optional profile fetch in every route
+- **Two-phase schema migration**: Phase 1 (nullable) → backfill → Phase 2 (required) — safe pattern for adding required columns to tables with existing data
+- **Compound unique constraints**: `@@unique([tenantId, field])` for uniqueness scoped per organization instead of globally
+- **One-time migration scripts**: live in `scripts/`, use `as any` for post-migration type mismatches, include clear comments explaining why
