@@ -26,6 +26,11 @@ enum Role {
   USER
 }
 
+enum DocumentType {
+  CNPJ
+  CPF
+}
+
 enum PayableStatus {
   PENDING
   PAID
@@ -57,21 +62,30 @@ model User {
 
 /// Companies or people the user pays (fornecedores).
 model Supplier {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  name      String
-  document  String   // CPF or CNPJ
-  email     String?
-  phone     String?
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String       @map("user_id") @db.Uuid
+  name         String
+  documentType DocumentType @map("document_type")
+  document     String       // CPF or CNPJ — stored as raw digits only
+  tradeName    String?      @map("trade_name") // Nome fantasia
+  contactName  String?      @map("contact_name")
+  email        String?
+  phone        String?
+  bankName     String?      @map("bank_name")
+  bankAgency   String?      @map("bank_agency")
+  bankAccount  String?      @map("bank_account")
+  pixKey       String?      @map("pix_key")
+  notes        String?
+  active       Boolean      @default(true) // Soft delete flag
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relationships
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   payables Payable[]
 
-  // Index: speeds up lookups by CPF/CNPJ
-  @@index([document], map: "idx_suppliers_doc")
+  // Unique constraint: no two suppliers can share the same CPF/CNPJ
+  @@unique([document], map: "idx_suppliers_doc")
   @@map("suppliers")
 }
 
