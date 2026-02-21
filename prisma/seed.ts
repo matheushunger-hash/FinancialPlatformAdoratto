@@ -1,0 +1,85 @@
+import "dotenv/config";
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { createClient } from "@supabase/supabase-js";
+import { PrismaClient, Role } from "@prisma/client";
+
+// This script seeds the database with initial users.
+// It creates each user in TWO places:
+//   1. Supabase Auth — handles login credentials (email/password, JWT tokens)
+//   2. Prisma users table — stores profile data (name, role)
+// Both share the same UUID, so they stay in sync.
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } },
+);
+
+// Prisma 7.x requires a driver adapter — same setup as the app's prisma.ts.
+// We use DIRECT_URL (port 5432) instead of DATABASE_URL (pooled, port 6543)
+// because the pg driver doesn't work well with Supabase's connection pooler.
+const pool = new Pool({ connectionString: process.env.DIRECT_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
+
+const SEED_PASSWORD = "Adoratto@2024";
+
+const users = [
+  { email: "adm@superadoratto.com.br", name: "Matheus", role: Role.ADMIN },
+  { email: "gabriel@superadoratto.com.br", name: "Gabriel", role: Role.ADMIN },
+  { email: "compras@superadoratto.com.br", name: "Wellington", role: Role.USER },
+];
+
+async function main() {
+  for (const user of users) {
+    console.log(`Seeding ${user.email}...`);
+
+    // Step 1: Create user in Supabase Auth.
+    // We first try to find an existing user by email (for idempotency).
+    // If found, we use their existing ID. If not, we create a new one.
+    let authId: string;
+
+    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
+    const existing = existingUsers?.users?.find((u) => u.email === user.email);
+
+    if (existing) {
+      authId = existing.id;
+      console.log(`  Auth user already exists (${authId})`);
+    } else {
+      const { data, error } = await supabaseAdmin.auth.admin.createUser({
+        email: user.email,
+        password: SEED_PASSWORD,
+        email_confirm: true, // Skip email verification — these are internal users
+      });
+
+      if (error) {
+        throw new Error(`Failed to create auth user ${user.email}: ${error.message}`);
+      }
+
+      authId = data.user.id;
+      console.log(`  Auth user created (${authId})`);
+    }
+
+    // Step 2: Upsert the user in Prisma.
+    // "Upsert" = update if exists, insert if not. This makes the script idempotent.
+    await prisma.user.upsert({
+      where: { id: authId },
+      update: { name: user.name, role: user.role, email: user.email },
+      create: { id: authId, email: user.email, name: user.name, role: user.role },
+    });
+
+    console.log(`  Prisma user upserted`);
+  }
+
+  console.log("\nSeed completed successfully!");
+}
+
+main()
+  .catch((e) => {
+    console.error("Seed failed:", e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
