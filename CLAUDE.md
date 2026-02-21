@@ -99,6 +99,9 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 1. Zod 4 uses `error` (not `required_error`) in `z.enum()` options — Zod 3 docs are misleading
 2. `prisma migrate dev` fails when existing migrations reference Supabase-only schemas (`auth`, `storage`) — use `prisma db push` instead for development
 3. Optional string fields in Zod need `.optional().or(z.literal(""))` to accept empty strings from form inputs
+4. `prisma.model.findUnique()` does NOT work with model-level `@@unique([field])` — Prisma only accepts `@id` or field-level `@unique` for `findUnique`. Use `findFirst()` instead for lookups on `@@unique` fields
+5. Always wrap Prisma operations in try/catch inside API routes — unhandled errors cause Next.js to return HTML (not JSON), which crashes the client-side `res.json()` call. Return `{ error: message }` with status 500
+6. After changing `prisma/schema.prisma`, the dev server must be **fully restarted** (kill process + `npm run dev`) — hot reload does NOT pick up Prisma client changes because the singleton caches the old client
 
 **Patterns established:**
 - API Routes authenticate via `createClient()` + `supabase.auth.getUser()` — return 401 if no user
