@@ -207,6 +207,9 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
                           ? "00.000.000/0000-00"
                           : "000.000.000-00"
                       }
+                      maxLength={
+                        form.watch("documentType") === "CNPJ" ? 18 : 14
+                      }
                       {...field}
                       onBlur={() => {
                         field.onBlur();
