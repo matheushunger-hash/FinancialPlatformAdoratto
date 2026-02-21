@@ -112,3 +112,24 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Orchestrator pattern: one Client Component owns state, passes data/callbacks to "dumb" children
 - Server-side uniqueness errors mapped to form field errors via `form.setError()`
 - Sheet component with `sm:max-w-lg` override for wider forms (default `sm:max-w-sm` is too narrow)
+
+### 2026-02-21 — ADR-006: Import Suppliers from Spreadsheet — CLOSED
+
+**What went well:**
+- Bulk import of 228 suppliers from Excel spreadsheet (`planilhabase/*.xlsx`)
+- Handled messy real-world data: scientific notation CNPJs, masked CPFs, missing documents, duplicates
+- Reused existing `isValidCNPJ`/`isValidCPF` validators from `src/lib/suppliers/validation.ts`
+- Script is fully idempotent — second run creates 0 new records
+- Clear summary report with counts for each category (imported, duplicated, invalid, no document)
+
+**Mistakes caught — avoid next time:**
+1. Prisma `upsert` has the same limitation as `findUnique` — it does NOT work with model-level `@@unique` constraints. Use the find-then-create/update pattern instead (same lesson from ADR-005)
+2. Excel stores long numbers (like CNPJs) as floating-point, which causes scientific notation (`7.66492E+13`). Use `{ raw: true }` in SheetJS `sheet_to_json` to preserve the original number, then `Math.round()` + `padStart(14, "0")` to recover the digits
+3. DB unique constraint on `document` means you can't store multiple empty strings. Use unique placeholder values (`PENDENTE-001`, `PENDENTE-002`, etc.) for suppliers without documents
+
+**Patterns established:**
+- One-off scripts live in `scripts/` directory (not `prisma/`) — `prisma/` is reserved for schema/seed
+- Import scripts follow the same DB setup pattern as `prisma/seed.ts` (dotenv, pg Pool, PrismaPg adapter, DIRECT_URL)
+- For no-document imports, use `PENDENTE-NNN` placeholders — clearly identifiable in the UI as needing real documents later
+- npm script naming: `db:import-suppliers` follows the `db:*` convention for database operations
+- Business data files (spreadsheets) go in `/planilhabase/` and are gitignored
