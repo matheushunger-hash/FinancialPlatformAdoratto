@@ -5,6 +5,7 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
+  type RowSelectionState,
   type SortingState,
 } from "@tanstack/react-table";
 import {
@@ -20,6 +21,7 @@ import {
 import { format, differenceInCalendarDays } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +60,8 @@ interface PayablesTableProps {
   userRole: string;
   onTransition: (id: string, action: string) => void;
   onRequestPay: (id: string) => void;
+  rowSelection: RowSelectionState;
+  onRowSelectionChange: (selection: RowSelectionState) => void;
 }
 
 // --- Helper: Format currency in BRL ---
@@ -105,6 +109,31 @@ function buildColumns(
   onRequestPay: (id: string) => void,
 ) {
   return [
+    // 0. Checkbox — select row (ADR-011)
+    columnHelper.display({
+      id: "select",
+      header: ({ table }) => (
+        <Checkbox
+          checked={
+            table.getIsAllPageRowsSelected() ||
+            (table.getIsSomePageRowsSelected() && "indeterminate")
+          }
+          onCheckedChange={(value) =>
+            table.toggleAllPageRowsSelected(!!value)
+          }
+          aria-label="Selecionar todos"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(!!value)}
+          aria-label="Selecionar linha"
+        />
+      ),
+      enableSorting: false,
+    }),
+
     // 1. Fornecedor (sortable)
     columnHelper.accessor("supplierName", {
       id: "supplierName",
@@ -305,6 +334,8 @@ export function PayablesTable({
   userRole,
   onTransition,
   onRequestPay,
+  rowSelection,
+  onRowSelectionChange,
 }: PayablesTableProps) {
   // Build columns with callbacks — memoize via useMemo would be an option,
   // but since TanStack Table recreates on every render anyway, it's fine here.
@@ -318,7 +349,14 @@ export function PayablesTable({
     columns,
     getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
-    state: { sorting },
+    enableRowSelection: true,
+    state: { sorting, rowSelection },
+    onRowSelectionChange: (updater) => {
+      // TanStack passes either a new state or an updater function
+      const next =
+        typeof updater === "function" ? updater(rowSelection) : updater;
+      onRowSelectionChange(next);
+    },
     enableSortingRemoval: false,
   });
 
@@ -378,6 +416,7 @@ export function PayablesTable({
           {loading &&
             Array.from({ length: 5 }).map((_, i) => (
               <TableRow key={`skeleton-${i}`}>
+                <TableCell><Skeleton className="h-4 w-4" /></TableCell>
                 <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                 <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-36" /></TableCell>
                 <TableCell><Skeleton className="h-5 w-16" /></TableCell>

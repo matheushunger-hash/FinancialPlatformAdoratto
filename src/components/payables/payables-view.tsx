@@ -1,16 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Search } from "lucide-react";
+import type { RowSelectionState } from "@tanstack/react-table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { BatchActionBar } from "@/components/payables/batch-action-bar";
 import { PayablesTable } from "@/components/payables/payables-table";
 import { PayablesFilters } from "@/components/payables/payables-filters";
 import { PayablesPagination } from "@/components/payables/payables-pagination";
 import { PayableSheet } from "@/components/payables/payable-sheet";
 import { PayablePayDialog } from "@/components/payables/payable-pay-dialog";
+import { exportPayablesToCSV } from "@/lib/payables/export-csv";
 import type {
+  BatchTransitionResponse,
   PayableFilters,
   PayableListItem,
   PayablesListResponse,
@@ -40,6 +54,15 @@ export function PayablesView({ userRole }: PayablesViewProps) {
 
   // Payment modal state — stores the payable ID that is being paid (ADR-010)
   const [payingPayableId, setPayingPayableId] = useState<string | null>(null);
+
+  // Row selection state for batch actions (ADR-011)
+  // TanStack format: { "0": true, "2": true } where keys are row indices
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
+  // Batch action state — controls which confirmation dialog is open
+  const [batchAction, setBatchAction] = useState<"approve" | "pay" | null>(
+    null,
+  );
 
   // Sort state — default to dueDate descending (most urgent first)
   const [sort, setSort] = useState("dueDate");
@@ -91,6 +114,7 @@ export function PayablesView({ userRole }: PayablesViewProps) {
       setPayables(data.payables);
       setTotal(data.total);
       setTotalPages(data.totalPages);
+      setRowSelection({}); // Clear selection when data changes (ADR-011)
     } catch {
       toast.error("Erro ao carregar títulos");
     } finally {
@@ -155,6 +179,77 @@ export function PayablesView({ userRole }: PayablesViewProps) {
     }
   }
 
+  // --- Batch actions (ADR-011) ---
+
+  // Compute the currently selected payable objects and their total R$ value
+  const selectedPayables = useMemo(() => {
+    return Object.keys(rowSelection)
+      .filter((key) => rowSelection[key])
+      .map((key) => payables[Number(key)])
+      .filter(Boolean);
+  }, [rowSelection, payables]);
+
+  const selectedTotal = useMemo(() => {
+    return selectedPayables.reduce(
+      (sum, p) => sum + Number(p.payValue),
+      0,
+    );
+  }, [selectedPayables]);
+
+  // Count eligible items for the current batch action (used in confirmation dialogs)
+  const eligibleForApprove = selectedPayables.filter(
+    (p) => p.status === "PENDING",
+  );
+  const eligibleForPay = selectedPayables.filter(
+    (p) => p.status === "PENDING" || p.status === "APPROVED",
+  );
+
+  async function handleBatchTransition(action: string, paidAt?: string) {
+    // Filter to only eligible IDs for this action
+    const eligible =
+      action === "approve" ? eligibleForApprove : eligibleForPay;
+    const ids = eligible.map((p) => p.id);
+
+    if (ids.length === 0) return;
+
+    try {
+      const res = await fetch("/api/payables/batch-transition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, action, paidAt }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erro ao processar lote");
+      }
+
+      const result: BatchTransitionResponse = await res.json();
+
+      // Show toast with results
+      if (result.failed.length === 0) {
+        toast.success(
+          `${result.succeeded.length} título(s) atualizado(s) com sucesso`,
+        );
+      } else {
+        toast.warning(
+          `${result.succeeded.length} atualizado(s), ${result.failed.length} com erro`,
+        );
+      }
+
+      setRowSelection({});
+      fetchPayables();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao processar lote",
+      );
+    }
+  }
+
+  function handleBatchExportCSV() {
+    exportPayablesToCSV(selectedPayables);
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar: search + new button */}
@@ -190,6 +285,8 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         userRole={userRole}
         onTransition={handleTransition}
         onRequestPay={(id) => setPayingPayableId(id)}
+        rowSelection={rowSelection}
+        onRowSelectionChange={setRowSelection}
       />
 
       {/* Pagination — always visible so user sees the count when filters reduce results */}
@@ -208,7 +305,7 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         onSuccess={handleSuccess}
       />
 
-      {/* Payment date modal (ADR-010) */}
+      {/* Payment date modal — single item (ADR-010) */}
       <PayablePayDialog
         open={payingPayableId !== null}
         onOpenChange={(open) => {
@@ -217,6 +314,72 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         onConfirm={(paidAt) => {
           handleTransition(payingPayableId!, "pay", paidAt);
           setPayingPayableId(null);
+        }}
+      />
+
+      {/* Batch action bar — floating at bottom when items are selected (ADR-011) */}
+      <BatchActionBar
+        selectedCount={selectedPayables.length}
+        selectedTotal={selectedTotal}
+        selectedPayables={selectedPayables}
+        userRole={userRole}
+        onApprove={() => setBatchAction("approve")}
+        onPay={() => setBatchAction("pay")}
+        onExport={handleBatchExportCSV}
+        onClear={() => setRowSelection({})}
+      />
+
+      {/* Batch approve confirmation dialog (ADR-011) */}
+      <AlertDialog
+        open={batchAction === "approve"}
+        onOpenChange={(open) => {
+          if (!open) setBatchAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aprovar títulos em lote</AlertDialogTitle>
+            <AlertDialogDescription>
+              {eligibleForApprove.length} de {selectedPayables.length}{" "}
+              selecionado(s) podem ser aprovados (status Pendente).
+              {eligibleForApprove.length > 0 && (
+                <>
+                  {" "}
+                  Total: R${" "}
+                  {eligibleForApprove
+                    .reduce((s, p) => s + Number(p.payValue), 0)
+                    .toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                handleBatchTransition("approve");
+                setBatchAction(null);
+              }}
+              disabled={eligibleForApprove.length === 0}
+            >
+              Aprovar {eligibleForApprove.length} título(s)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Batch pay date picker dialog (ADR-011) — reuses PayablePayDialog */}
+      <PayablePayDialog
+        open={batchAction === "pay"}
+        onOpenChange={(open) => {
+          if (!open) setBatchAction(null);
+        }}
+        onConfirm={(paidAt) => {
+          handleBatchTransition("pay", paidAt);
+          setBatchAction(null);
         }}
       />
     </div>

@@ -49,3 +49,10 @@ export interface PayablesListResponse {
   pageSize: number;
   totalPages: number;
 }
+
+// Response from the batch transition endpoint (ADR-011).
+// Best-effort: each item either succeeds or fails independently.
+export interface BatchTransitionResponse {
+  succeeded: { id: string; status: string }[];
+  failed: { id: string; error: string }[];
+}
