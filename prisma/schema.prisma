@@ -38,6 +38,20 @@ enum PayableStatus {
   CANCELLED
 }
 
+enum PaymentMethod {
+  BOLETO
+  PIX
+  TRANSFERENCIA
+  CARTAO
+  DINHEIRO
+  CHEQUE
+}
+
+enum PayableCategory {
+  REVENDA
+  DESPESA
+}
+
 // =============================================================================
 // Tables
 // =============================================================================
@@ -91,18 +105,23 @@ model Supplier {
 
 /// Bills and invoices — the core entity of the platform (contas a pagar).
 model Payable {
-  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String        @map("user_id") @db.Uuid
-  supplierId  String        @map("supplier_id") @db.Uuid
-  description String
-  amount      Decimal       @db.Decimal(12, 2) // up to 9,999,999,999.99
-  dueDate     DateTime      @map("due_date") @db.Date
-  status      PayableStatus @default(PENDING)
-  category    String
-  notes       String?
-  paidAt      DateTime?     @map("paid_at") @db.Timestamptz
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  supplierId    String          @map("supplier_id") @db.Uuid
+  description   String
+  amount        Decimal         @db.Decimal(12, 2) // Valor original
+  payValue      Decimal         @map("pay_value") @db.Decimal(12, 2) // Valor a pagar
+  issueDate     DateTime        @map("issue_date") @db.Date // Data de entrada
+  dueDate       DateTime        @map("due_date") @db.Date
+  status        PayableStatus   @default(PENDING)
+  category      PayableCategory
+  paymentMethod PaymentMethod   @map("payment_method")
+  invoiceNumber String?         @map("invoice_number") // Número NF-e
+  tags          String[]        @default([]) // Multi-select labels
+  notes         String?
+  paidAt        DateTime?       @map("paid_at") @db.Timestamptz
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz
 
   // Relationships
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
