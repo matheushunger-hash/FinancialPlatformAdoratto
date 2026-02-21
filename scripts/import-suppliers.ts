@@ -131,6 +131,16 @@ function normalizeName(raw: string): string {
 async function main() {
   console.log("=== ADR-006: Import Suppliers from Spreadsheet ===\n");
 
+  // --- Step 0: Find the tenant ---
+  // Every supplier needs a tenantId. The tenant should already exist from the seed script.
+  const tenant = await prisma.tenant.findFirst({ where: { name: "Adoratto" } });
+  if (!tenant) {
+    throw new Error(
+      "No 'Adoratto' tenant found. Run `npm run db:seed` first.",
+    );
+  }
+  console.log(`Using tenant: ${tenant.name} (${tenant.id})`);
+
   // --- Step 1: Find the user who will "own" the imported suppliers ---
   // Every supplier needs a userId (foreign key). We use the first ADMIN user
   // in the database — this is the same approach the seed script uses.
@@ -218,7 +228,7 @@ async function main() {
       seenDocuments.set(digits, name);
 
       const existingByDoc = await prisma.supplier.findFirst({
-        where: { document: digits },
+        where: { document: digits, tenantId: tenant.id },
       });
 
       if (existingByDoc) {
@@ -230,6 +240,7 @@ async function main() {
         await prisma.supplier.create({
           data: {
             userId: adminUser.id,
+            tenantId: tenant.id,
             name,
             documentType,
             document: digits,
@@ -249,7 +260,7 @@ async function main() {
 
       // Check if a supplier with this exact name already exists (avoid name dupes)
       const existing = await prisma.supplier.findFirst({
-        where: { name, userId: adminUser.id },
+        where: { name, tenantId: tenant.id },
       });
 
       if (existing) {
@@ -263,6 +274,7 @@ async function main() {
       await prisma.supplier.create({
         data: {
           userId: adminUser.id,
+          tenantId: tenant.id,
           name,
           documentType: "CNPJ", // Default — will be corrected when real doc is added
           document: placeholder,

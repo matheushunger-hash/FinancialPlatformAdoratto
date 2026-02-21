@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { getAuthContext } from "@/lib/auth/context";
 import { supplierFormSchema, stripDocument } from "@/lib/suppliers/validation";
 import type { SuppliersListResponse } from "@/lib/suppliers/types";
 
@@ -14,13 +14,9 @@ import type { SuppliersListResponse } from "@/lib/suppliers/types";
 // =============================================================================
 
 export async function GET(request: NextRequest) {
-  // 1. Authenticate — every API route must verify the user
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  // 1. Authenticate — returns userId, tenantId, and role in one call
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -34,17 +30,17 @@ export async function GET(request: NextRequest) {
   // Prisma uses `contains` + `mode: "insensitive"` for case-insensitive search.
   // For the document field, we strip non-digits from the search term so users
   // can search by formatted or raw CNPJ/CPF.
-  // Scope every query to the authenticated user — tenant isolation
+  // Scope every query to the tenant — everyone in the org sees the same suppliers
   const where = search
     ? {
-        userId: user.id,
+        tenantId: ctx.tenantId,
         OR: [
           { name: { contains: search, mode: "insensitive" as const } },
           { tradeName: { contains: search, mode: "insensitive" as const } },
           { document: { contains: stripDocument(search) } },
         ],
       }
-    : { userId: user.id };
+    : { tenantId: ctx.tenantId };
 
   // 4. Run both queries in parallel — count for pagination, find for data
   const [total, suppliers] = await Promise.all([
@@ -80,12 +76,8 @@ export async function GET(request: NextRequest) {
 // =============================================================================
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -109,10 +101,10 @@ export async function POST(request: NextRequest) {
   const strippedDocument = stripDocument(data.document);
 
   try {
-    // Check for duplicate document at the application level
+    // Check for duplicate document within this tenant
     // (the DB unique constraint is a safety net, but we want a friendly error)
     const existing = await prisma.supplier.findFirst({
-      where: { document: strippedDocument, userId: user.id },
+      where: { document: strippedDocument, tenantId: ctx.tenantId },
     });
 
     if (existing) {
@@ -124,7 +116,8 @@ export async function POST(request: NextRequest) {
 
     const supplier = await prisma.supplier.create({
       data: {
-        userId: user.id,
+        userId: ctx.userId,
+        tenantId: ctx.tenantId,
         name: data.name,
         documentType: data.documentType,
         document: strippedDocument,

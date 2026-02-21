@@ -58,6 +58,21 @@ enum PayableCategory {
 // Tables
 // =============================================================================
 
+/// Organization — groups users who share the same data.
+/// All read queries scope by tenantId so everyone in the org sees the same records.
+model Tenant {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  users     User[]
+  suppliers Supplier[]
+  payables  Payable[]
+
+  @@map("tenants")
+}
+
 /// User profile — synced with Supabase Auth.
 /// The `id` here MUST match the UUID from auth.users.
 model User {
@@ -66,10 +81,12 @@ model User {
   name      String
   role      Role     @default(USER)
   avatarUrl String?  @map("avatar_url")
+  tenantId  String   @map("tenant_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  // A user "has many" suppliers and payables
+  // Relationships
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
   suppliers Supplier[]
   payables  Payable[]
 
@@ -80,6 +97,7 @@ model User {
 model Supplier {
   id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId       String       @map("user_id") @db.Uuid
+  tenantId     String       @map("tenant_id") @db.Uuid
   name         String
   documentType DocumentType @map("document_type")
   document     String       // CPF or CNPJ — stored as raw digits only
@@ -98,10 +116,11 @@ model Supplier {
 
   // Relationships
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id])
   payables Payable[]
 
-  // Unique constraint: no two suppliers can share the same CPF/CNPJ
-  @@unique([document], map: "idx_suppliers_doc")
+  // Unique constraint: no two suppliers in the same tenant can share the same CPF/CNPJ
+  @@unique([tenantId, document], map: "idx_suppliers_tenant_doc")
   @@map("suppliers")
 }
 
@@ -109,6 +128,7 @@ model Supplier {
 model Payable {
   id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String          @map("user_id") @db.Uuid
+  tenantId      String          @map("tenant_id") @db.Uuid
   supplierId    String          @map("supplier_id") @db.Uuid
   description   String
   amount        Decimal         @db.Decimal(12, 2) // Valor original
@@ -129,10 +149,12 @@ model Payable {
 
   // Relationships
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
   supplier    Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   attachments Attachment[]
 
   // Indexes — each speeds up a different common query
+  @@index([tenantId], map: "idx_payables_tenant")
   @@index([dueDate], map: "idx_payables_due")
   @@index([supplierId], map: "idx_payables_supplier")
   @@index([status], map: "idx_payables_status")

@@ -35,6 +35,16 @@ const users = [
 ];
 
 async function main() {
+  // Step 0: Create or find the "Adoratto" tenant (idempotent)
+  // tenantId is now required on users, so we must have a tenant before creating users.
+  let tenant = await prisma.tenant.findFirst({ where: { name: "Adoratto" } });
+  if (!tenant) {
+    tenant = await prisma.tenant.create({ data: { name: "Adoratto" } });
+    console.log(`Tenant created: ${tenant.id}`);
+  } else {
+    console.log(`Tenant already exists: ${tenant.id}`);
+  }
+
   for (const user of users) {
     console.log(`Seeding ${user.email}...`);
 
@@ -68,8 +78,8 @@ async function main() {
     // "Upsert" = update if exists, insert if not. This makes the script idempotent.
     await prisma.user.upsert({
       where: { id: authId },
-      update: { name: user.name, role: user.role, email: user.email },
-      create: { id: authId, email: user.email, name: user.name, role: user.role },
+      update: { name: user.name, role: user.role, email: user.email, tenantId: tenant.id },
+      create: { id: authId, email: user.email, name: user.name, role: user.role, tenantId: tenant.id },
     });
 
     console.log(`  Prisma user upserted`);

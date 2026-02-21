@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { getAuthContext } from "@/lib/auth/context";
 import { supplierFormSchema, stripDocument } from "@/lib/suppliers/validation";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -14,12 +14,8 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -30,8 +26,8 @@ export async function GET(
   }
 
   try {
-    // Scope by userId — prevents users from viewing another user's supplier
-    const supplier = await prisma.supplier.findFirst({ where: { id, userId: user.id } });
+    // Scope by tenantId — users in the same org can view each other's suppliers
+    const supplier = await prisma.supplier.findFirst({ where: { id, tenantId: ctx.tenantId } });
 
     if (!supplier) {
       return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
@@ -62,12 +58,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -85,8 +77,8 @@ export async function PATCH(
   }
 
   try {
-    // Verify the supplier exists AND belongs to this user (ownership check)
-    const existing = await prisma.supplier.findFirst({ where: { id, userId: user.id } });
+    // Verify the supplier exists AND belongs to this tenant
+    const existing = await prisma.supplier.findFirst({ where: { id, tenantId: ctx.tenantId } });
     if (!existing) {
       return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
     }
@@ -138,9 +130,9 @@ export async function PATCH(
     const data = parsed.data;
     const strippedDocument = stripDocument(data.document);
 
-    // Check document uniqueness, excluding the current supplier
+    // Check document uniqueness within the tenant, excluding the current supplier
     const duplicate = await prisma.supplier.findFirst({
-      where: { document: strippedDocument, userId: user.id },
+      where: { document: strippedDocument, tenantId: ctx.tenantId },
     });
 
     if (duplicate && duplicate.id !== id) {

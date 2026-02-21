@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
+import { getAuthContext } from "@/lib/auth/context";
 import { payableFormSchema, parseCurrency } from "@/lib/payables/validation";
 import type { PayablesListResponse } from "@/lib/payables/types";
 
@@ -34,12 +34,8 @@ const VALID_METHODS = [
 ];
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -107,8 +103,8 @@ export async function GET(request: NextRequest) {
     conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59") } });
   }
 
-  // Scope every query to the authenticated user — tenant isolation
-  conditions.push({ userId: user.id });
+  // Scope every query to the tenant — everyone in the org sees the same payables
+  conditions.push({ tenantId: ctx.tenantId });
   const where = { AND: conditions };
 
   try {
@@ -169,12 +165,8 @@ export async function GET(request: NextRequest) {
 // =============================================================================
 
 export async function POST(request: NextRequest) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -196,9 +188,9 @@ export async function POST(request: NextRequest) {
 
   const data = parsed.data;
 
-  // Verify the supplier belongs to this user — prevents linking to another user's supplier
+  // Verify the supplier belongs to this tenant — prevents linking to another org's supplier
   const supplier = await prisma.supplier.findFirst({
-    where: { id: data.supplierId, userId: user.id },
+    where: { id: data.supplierId, tenantId: ctx.tenantId },
   });
   if (!supplier) {
     return NextResponse.json(
@@ -214,7 +206,8 @@ export async function POST(request: NextRequest) {
   try {
     const payable = await prisma.payable.create({
       data: {
-        userId: user.id,
+        userId: ctx.userId,
+        tenantId: ctx.tenantId,
         supplierId: data.supplierId,
         description: data.description,
         category: data.category,
