@@ -236,3 +236,29 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Document uniqueness checks scoped per user — two different users can have suppliers with the same CNPJ
 - Password reset script: `scripts/reset-passwords.ts` uses `supabase.auth.admin.updateUserById()` — run with `NEW_PASSWORD="..." npm run db:reset-passwords`
 - Seed script now requires `SEED_PASSWORD` env var — fails fast with a clear error if missing
+
+### 2026-02-21 — ADR-010: Status Workflow (Workflow de Status) — CLOSED
+
+**What went well:**
+- Role-based status workflow: ADMIN can approve/reject/reopen, all roles can register payments
+- Single transition endpoint (`POST /api/payables/[id]/transition`) handles all status changes — no route sprawl
+- Transition map (`src/lib/payables/transitions.ts`) as single source of truth — both API (validation) and UI (menu items) read from the same `TRANSITIONS` object
+- `getAvailableActions(status, role)` filters transitions by role — clean separation of authorization logic
+- Dynamic actions dropdown replaces disabled placeholder items — menu items appear/disappear based on payable status + user role
+- Payment date modal with calendar picker (same Popover + Calendar pattern as the rest of the app)
+- Schema evolution was additive (new enum values + nullable columns) — no data migration needed
+- `npx tsc --noEmit` passes with zero errors, 10 files changed (7 modified, 3 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this ADR — patterns were well-established from previous ADRs
+
+**Patterns established:**
+- Transition map pattern: `TRANSITIONS: Record<string, StatusTransition[]>` defines every valid status change, target status, and required roles — single source of truth for workflow logic
+- `getAvailableActions(currentStatus, userRole)` filters transitions by role — used by both UI (show/hide menu items) and API (validate requests)
+- Single transition API endpoint: `POST /api/payables/[id]/transition` with `{ action, paidAt? }` body — avoids separate routes for each action
+- Action-specific update data: `approve` sets `approvedBy`/`approvedAt`, `pay` sets `paidAt`, `reopen` clears approval fields — all handled in one route with conditional logic
+- Column factory function: `buildColumns(userRole, onTransition, onRequestPay)` replaces static `const columns` when columns need access to props/callbacks
+- Payment modal pattern: `payingPayableId` state in orchestrator controls Dialog open/close — `onRequestPay` sets ID, dialog confirm calls `handleTransition`, both paths clear the ID
+- User role fetched in Server Component page (`contas-a-pagar/page.tsx`) and passed as prop — necessary because Next.js App Router doesn't share data between layout and page
+- Terminal statuses (`PAID`, `OVERDUE`, `CANCELLED`) have no entries in `TRANSITIONS` — `getAvailableActions()` returns `[]`, dropdown shows "Sem ações disponíveis"
+- `STATUS_CONFIG` extended with `APPROVED` (default/blue badge) and `REJECTED` (destructive/red badge) — consistent badge rendering pattern
