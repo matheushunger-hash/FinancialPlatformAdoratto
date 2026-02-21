@@ -184,3 +184,28 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Status/category badge maps: `STATUS_CONFIG` and `TAG_LABELS` as `Record<string, { label, variant }>` for consistent badge rendering
 - `formatBRL()` helper: `R$ ${num.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` with `tabular-nums` CSS for aligned columns
 - Date safety rule: never use `new Date("YYYY-MM-DD")` for display — always add `T12:00:00` to force local time parsing
+
+### 2026-02-21 — ADR-009: Filters and Search for Payables Table (Filtros e Busca) — CLOSED
+
+**What went well:**
+- Quick-filter pills (status/tag) + advanced filters (category, payment method, date range) in a clean two-row layout
+- AND-based `conditions[]` array in the API — each active filter pushes a condition, all combine with `AND` logic
+- Enum whitelists (`VALID_STATUSES`, `VALID_CATEGORIES`, `VALID_METHODS`) for safe filter validation — unknown values silently ignored
+- Search expanded to include `notes` and `supplier.document` (CNPJ/CPF) in the existing OR array
+- Quick pills are mutually exclusive with each other but independent from advanced filters — "Vencidos" + "Revenda" + "PIX" all active simultaneously
+- Pagination counter improved: "Mostrando X de Y título(s)" always visible, pagination buttons only when `totalPages > 1`
+- Zero new dependencies — reused existing shadcn components (Badge, Select, Popover, Calendar, Button)
+- Clean implementation: 4 modified files + 1 new file, `npx tsc --noEmit` passes with zero errors
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this ADR — patterns were well-established from ADR-007 and ADR-008
+
+**Patterns established:**
+- `conditions[]` + `AND` pattern for combining multiple optional filters in API routes — cleaner than nested ternaries or spreading into a single object
+- Quick-filter pills: `Badge` with `variant="default"` (active) vs `variant="outline"` (inactive), setting `status`/`tag` while preserving other filters via spread (`{ ...filters, status, tag }`)
+- Filter component is "dumb" (presentational): receives `filters` + `onFiltersChange` from orchestrator, never fetches data itself
+- Every filter change resets `page` to 1 — prevents empty page when filters reduce total results
+- Date range filters use `T00:00:00` / `T23:59:59` in API and `T12:00:00` for display — consistent with ADR-008 timezone safety rule
+- Select dropdowns use sentinel value `"ALL"` mapped to `undefined` — Radix Select doesn't support `undefined` as a value
+- `hasAnyFilter` boolean computed from all filter fields — drives visibility of "Limpar Filtros" button
+- Pagination always rendered (counter useful even on single page), but nav buttons conditionally rendered inside the component
