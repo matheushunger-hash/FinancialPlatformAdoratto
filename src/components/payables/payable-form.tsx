@@ -300,7 +300,7 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.value
-                            ? format(new Date(field.value), "dd/MM/yyyy", {
+                            ? format(new Date(field.value + "T12:00:00"), "dd/MM/yyyy", {
                                 locale: ptBR,
                               })
                             : "Selecionar"}
@@ -311,7 +311,7 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
                       <Calendar
                         mode="single"
                         selected={
-                          field.value ? new Date(field.value) : undefined
+                          field.value ? new Date(field.value + "T12:00:00") : undefined
                         }
                         onSelect={(date) =>
                           field.onChange(
@@ -346,7 +346,7 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
                           {field.value
-                            ? format(new Date(field.value), "dd/MM/yyyy", {
+                            ? format(new Date(field.value + "T12:00:00"), "dd/MM/yyyy", {
                                 locale: ptBR,
                               })
                             : "Selecionar"}
@@ -357,7 +357,7 @@ export function PayableForm({ onSuccess }: PayableFormProps) {
                       <Calendar
                         mode="single"
                         selected={
-                          field.value ? new Date(field.value) : undefined
+                          field.value ? new Date(field.value + "T12:00:00") : undefined
                         }
                         onSelect={(date) =>
                           field.onChange(

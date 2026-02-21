@@ -5,6 +5,8 @@ export interface PayableListItem {
   id: string;
   supplierId: string;
   supplierName: string; // Joined from supplier relation
+  supplierDocument: string; // Raw digits from supplier
+  supplierDocumentType: "CNPJ" | "CPF"; // For formatting
   description: string;
   category: "REVENDA" | "DESPESA";
   issueDate: string;

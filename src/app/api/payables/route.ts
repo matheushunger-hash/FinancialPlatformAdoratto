@@ -5,11 +5,21 @@ import { payableFormSchema, parseCurrency } from "@/lib/payables/validation";
 import type { PayablesListResponse } from "@/lib/payables/types";
 
 // =============================================================================
-// GET /api/payables — List payables with pagination
+// GET /api/payables — List payables with pagination, sorting, and search
 // =============================================================================
-// Returns payables with the supplier name joined in. Ordered by due date
-// (most recent first). Minimal for now — ADR-008 will add search and filters.
+// Returns payables with supplier data joined in. Supports server-side sorting,
+// search across description/supplier name/invoice number, and pagination (25/page).
 // =============================================================================
+
+// Whitelist of sortable columns → Prisma orderBy mapping
+type PrismaOrder = Record<string, unknown>;
+const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
+  supplierName: (order) => ({ supplier: { name: order } }),
+  dueDate: (order) => ({ dueDate: order }),
+  amount: (order) => ({ amount: order }),
+  payValue: (order) => ({ payValue: order }),
+  status: (order) => ({ status: order }),
+};
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -25,15 +35,37 @@ export async function GET(request: NextRequest) {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = Math.min(
     50,
-    Math.max(1, Number(searchParams.get("pageSize")) || 10),
+    Math.max(1, Number(searchParams.get("pageSize")) || 25),
   );
+
+  // Sorting — default to dueDate desc
+  const sortParam = searchParams.get("sort") || "dueDate";
+  const orderParam =
+    searchParams.get("order") === "asc" ? "asc" : ("desc" as const);
+  const buildOrderBy = SORT_MAP[sortParam] ?? SORT_MAP.dueDate;
+  const orderBy = buildOrderBy(orderParam);
+
+  // Search — filter across description, supplier name, and invoice number
+  const searchTerm = searchParams.get("search")?.trim() || "";
+  const where = searchTerm
+    ? {
+        OR: [
+          { description: { contains: searchTerm, mode: "insensitive" as const } },
+          { supplier: { name: { contains: searchTerm, mode: "insensitive" as const } } },
+          { invoiceNumber: { contains: searchTerm, mode: "insensitive" as const } },
+        ],
+      }
+    : {};
 
   try {
     const [total, payables] = await Promise.all([
-      prisma.payable.count(),
+      prisma.payable.count({ where }),
       prisma.payable.findMany({
-        include: { supplier: { select: { name: true } } },
-        orderBy: { dueDate: "desc" },
+        where,
+        include: {
+          supplier: { select: { name: true, document: true, documentType: true } },
+        },
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -44,6 +76,8 @@ export async function GET(request: NextRequest) {
         id: p.id,
         supplierId: p.supplierId,
         supplierName: p.supplier.name,
+        supplierDocument: p.supplier.document,
+        supplierDocumentType: p.supplier.documentType as "CNPJ" | "CPF",
         description: p.description,
         category: p.category,
         issueDate: p.issueDate.toISOString(),
