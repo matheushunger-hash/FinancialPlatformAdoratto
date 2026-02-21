@@ -1,0 +1,120 @@
+// =============================================================================
+// Prisma Schema — Financial Platform Adoratto
+// =============================================================================
+// This file defines the shape of your database. Every table, column,
+// relationship, and index is declared here. When you run `prisma migrate dev`,
+// Prisma reads this file and generates the SQL to create/update your database.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================================
+// Enums — fixed lists of allowed values
+// =============================================================================
+// Instead of storing "ADMIN" as a plain string (where a typo like "admin"
+// could sneak in), the database enforces that the value MUST be one of these.
+// =============================================================================
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum PayableStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+// =============================================================================
+// Tables
+// =============================================================================
+
+/// User profile — synced with Supabase Auth.
+/// The `id` here MUST match the UUID from auth.users.
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String   @unique
+  name      String
+  role      Role     @default(USER)
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // A user "has many" suppliers and payables
+  suppliers Supplier[]
+  payables  Payable[]
+
+  @@map("users")
+}
+
+/// Companies or people the user pays (fornecedores).
+model Supplier {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  name      String
+  document  String   // CPF or CNPJ
+  email     String?
+  phone     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relationships
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payables Payable[]
+
+  // Index: speeds up lookups by CPF/CNPJ
+  @@index([document], map: "idx_suppliers_doc")
+  @@map("suppliers")
+}
+
+/// Bills and invoices — the core entity of the platform (contas a pagar).
+model Payable {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String        @map("user_id") @db.Uuid
+  supplierId  String        @map("supplier_id") @db.Uuid
+  description String
+  amount      Decimal       @db.Decimal(12, 2) // up to 9,999,999,999.99
+  dueDate     DateTime      @map("due_date") @db.Date
+  status      PayableStatus @default(PENDING)
+  category    String
+  notes       String?
+  paidAt      DateTime?     @map("paid_at") @db.Timestamptz
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relationships
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supplier    Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  attachments Attachment[]
+
+  // Indexes — each speeds up a different common query
+  @@index([dueDate], map: "idx_payables_due")
+  @@index([supplierId], map: "idx_payables_supplier")
+  @@index([status], map: "idx_payables_status")
+  @@index([category], map: "idx_payables_category")
+  @@map("payables")
+}
+
+/// Files attached to payables (receipts, invoices, contracts).
+model Attachment {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  payableId String   @map("payable_id") @db.Uuid
+  fileName  String   @map("file_name")
+  fileUrl   String   @map("file_url") // path inside the Storage bucket
+  fileSize  Int      @map("file_size") // size in bytes
+  mimeType  String   @map("mime_type") // e.g. "application/pdf"
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relationships
+  payable Payable @relation(fields: [payableId], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}
