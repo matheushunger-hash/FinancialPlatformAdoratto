@@ -36,9 +36,10 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 
 ## Seed Script
 - Located at `prisma/seed.ts`, run with `npm run db:seed`
-- Requires `SUPABASE_SERVICE_ROLE_KEY` in `.env`
+- Requires `SUPABASE_SERVICE_ROLE_KEY` and `SEED_PASSWORD` in `.env`
 - Idempotent: checks for existing Auth users, uses Prisma `upsert`
 - Current users: Matheus (ADMIN), Gabriel (ADMIN), Wellington (USER) — all @superadoratto.com.br
+- Password reset: `NEW_PASSWORD="..." npm run db:reset-passwords` (uses Supabase Admin API)
 
 ---
 
@@ -209,3 +210,29 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Select dropdowns use sentinel value `"ALL"` mapped to `undefined` — Radix Select doesn't support `undefined` as a value
 - `hasAnyFilter` boolean computed from all filter fields — drives visibility of "Limpar Filtros" button
 - Pagination always rendered (counter useful even on single page), but nav buttons conditionally rendered inside the component
+
+### 2026-02-21 — Security Fix: Tenant Isolation and Credential Hardening — CLOSED
+
+**What went well:**
+- Added `userId: user.id` scoping to all 7 Prisma queries across 3 API route files — full tenant isolation
+- Ownership verification before every mutation (update, deactivate, create-with-relation)
+- Supplier ownership check on payable creation — prevents linking a payable to another user's supplier
+- Removed hardcoded password from `prisma/seed.ts` — now reads from `SEED_PASSWORD` env var
+- Created `scripts/reset-passwords.ts` for bulk password resets via Supabase Admin API
+- `.env.example` updated to document the new `SEED_PASSWORD` variable
+- Zero TypeScript errors after all changes (`npx tsc --noEmit` clean)
+
+**Mistakes caught — avoid next time:**
+1. **Never ship API routes without tenant isolation** — authenticating the user (`getUser()`) only proves *who* they are, not *what they can access*. Every `where` clause must include `userId: user.id`
+2. **`findUnique` doesn't accept compound filters** — when adding `userId` to a `where: { id }` clause, you must switch to `findFirst({ where: { id, userId } })` because Prisma's `findUnique` only accepts `@id` or `@unique` fields
+3. **Shell env vars ≠ dotenv vars** — `dotenv/config` loads `.env` into the Node.js process, but the shell doesn't see them. To pass a `.env` value as a shell variable: `export $(grep '^VAR_NAME=' .env | xargs)` before the command
+4. **Never hardcode passwords in source code** — even in seed scripts. Use env vars and document them in `.env.example`
+
+**Patterns established:**
+- Tenant isolation rule: every Prisma query in API routes must include `userId: user.id` in its `where` clause
+- Ownership check before mutations: `findFirst({ where: { id, userId } })` returns null if the record doesn't belong to the user — return 404 (don't reveal that the record exists to other users)
+- For the `conditions[] + AND` pattern (payables): push `{ userId: user.id }` as a condition alongside filters — it composes naturally
+- For simple `where` objects (suppliers): spread `userId` directly into the object (`{ userId: user.id, OR: [...] }`)
+- Document uniqueness checks scoped per user — two different users can have suppliers with the same CNPJ
+- Password reset script: `scripts/reset-passwords.ts` uses `supabase.auth.admin.updateUserById()` — run with `NEW_PASSWORD="..." npm run db:reset-passwords`
+- Seed script now requires `SEED_PASSWORD` env var — fails fast with a clear error if missing
