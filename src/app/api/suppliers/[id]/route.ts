@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
 import { supplierFormSchema, stripDocument } from "@/lib/suppliers/validation";
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // =============================================================================
 // GET /api/suppliers/[id] — Get a single supplier
 // =============================================================================
@@ -21,6 +23,10 @@ export async function GET(
   }
 
   const { id } = await params;
+
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+  }
 
   try {
     // Scope by userId — prevents users from viewing another user's supplier
@@ -65,6 +71,10 @@ export async function PATCH(
   }
 
   const { id } = await params;
+
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+  }
 
   let body: unknown;
   try {
