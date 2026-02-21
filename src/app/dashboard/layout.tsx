@@ -1,13 +1,20 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
-import { DashboardHeader } from "./dashboard-header";
+import { AppSidebar } from "@/components/app-sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { Separator } from "@/components/ui/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 
 // This layout wraps every page under /dashboard/*.
 // It runs on the server and does two things:
 //   1. Checks if the user is authenticated (defense in depth — middleware already checks,
 //      but this is a second safety net in case middleware config changes)
-//   2. Fetches the user's profile from Prisma (name, role) so we can show it in the header
+//   2. Fetches the user's profile from Prisma (name, role) so we can show it in the sidebar
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -34,9 +41,18 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="min-h-svh bg-muted/40">
-      <DashboardHeader userName={profile.name} userRole={profile.role} />
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">{children}</main>
-    </div>
+    <SidebarProvider>
+      <AppSidebar userName={profile.name} userRole={profile.role} />
+      <SidebarInset>
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 !h-4" />
+          <div className="ml-auto">
+            <ThemeToggle />
+          </div>
+        </header>
+        <main className="flex-1 px-4 py-8 sm:px-6 lg:px-8">{children}</main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
