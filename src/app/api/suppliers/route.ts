@@ -27,16 +27,17 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get("search")?.trim() || "";
 
   // 3. Build the WHERE clause for filtering
-  // Only include the document condition when the search term has digits —
-  // otherwise stripDocument returns "" which matches every row via `contains`.
+  // Always search document as text (for "PENDENTE-001" placeholders).
+  // Also search by stripped digits when the term has any (for CNPJ/CPF).
   const searchConditions: Prisma.SupplierWhereInput[] = [];
   if (search) {
     searchConditions.push(
       { name: { contains: search, mode: "insensitive" as const } },
       { tradeName: { contains: search, mode: "insensitive" as const } },
+      { document: { contains: search, mode: "insensitive" as const } },
     );
     const strippedSearch = stripDocument(search);
-    if (strippedSearch) {
+    if (strippedSearch && strippedSearch !== search) {
       searchConditions.push({ document: { contains: strippedSearch } });
     }
   }
