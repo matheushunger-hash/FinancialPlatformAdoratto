@@ -41,6 +41,7 @@ const QUICK_FILTERS = [
   { key: "all", label: "Todos", status: undefined, tag: undefined },
   { key: "overdue", label: "Vencidos", status: "OVERDUE" as const, tag: undefined },
   { key: "pending", label: "Pendentes", status: "PENDING" as const, tag: undefined },
+  { key: "approved", label: "Aprovados", status: "APPROVED" as const, tag: undefined },
   { key: "paid", label: "Pagos", status: "PAID" as const, tag: undefined },
   { key: "protestado", label: "Protestados", status: undefined, tag: "protestado" },
 ] as const;
@@ -65,6 +66,7 @@ export function PayablesFilters({
     if (filters.tag === "protestado") return "protestado";
     if (filters.status === "OVERDUE") return "overdue";
     if (filters.status === "PENDING") return "pending";
+    if (filters.status === "APPROVED") return "approved";
     if (filters.status === "PAID") return "paid";
     if (!filters.status && !filters.tag) return "all";
     return "";

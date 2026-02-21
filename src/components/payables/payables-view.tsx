@@ -9,6 +9,7 @@ import { PayablesTable } from "@/components/payables/payables-table";
 import { PayablesFilters } from "@/components/payables/payables-filters";
 import { PayablesPagination } from "@/components/payables/payables-pagination";
 import { PayableSheet } from "@/components/payables/payable-sheet";
+import { PayablePayDialog } from "@/components/payables/payable-pay-dialog";
 import type {
   PayableFilters,
   PayableListItem,
@@ -24,7 +25,11 @@ import type {
 // State: payables list, pagination, search (debounced), sort + order, sheet.
 // =============================================================================
 
-export function PayablesView() {
+interface PayablesViewProps {
+  userRole: string;
+}
+
+export function PayablesView({ userRole }: PayablesViewProps) {
   const [payables, setPayables] = useState<PayableListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -32,6 +37,9 @@ export function PayablesView() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+
+  // Payment modal state — stores the payable ID that is being paid (ADR-010)
+  const [payingPayableId, setPayingPayableId] = useState<string | null>(null);
 
   // Sort state — default to dueDate descending (most urgent first)
   const [sort, setSort] = useState("dueDate");
@@ -122,6 +130,31 @@ export function PayablesView() {
     setPage(1); // Reset to page 1 when sort changes
   }
 
+  // Status transition handler — calls the transition API (ADR-010)
+  async function handleTransition(
+    payableId: string,
+    action: string,
+    paidAt?: string,
+  ) {
+    try {
+      const res = await fetch(`/api/payables/${payableId}/transition`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, paidAt }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erro ao atualizar status");
+      }
+      toast.success("Status atualizado com sucesso");
+      fetchPayables(); // Refresh the list
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao atualizar status",
+      );
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar: search + new button */}
@@ -154,6 +187,9 @@ export function PayablesView() {
         sort={sort}
         order={order}
         onSortChange={handleSortChange}
+        userRole={userRole}
+        onTransition={handleTransition}
+        onRequestPay={(id) => setPayingPayableId(id)}
       />
 
       {/* Pagination — always visible so user sees the count when filters reduce results */}
@@ -170,6 +206,18 @@ export function PayablesView() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         onSuccess={handleSuccess}
+      />
+
+      {/* Payment date modal (ADR-010) */}
+      <PayablePayDialog
+        open={payingPayableId !== null}
+        onOpenChange={(open) => {
+          if (!open) setPayingPayableId(null);
+        }}
+        onConfirm={(paidAt) => {
+          handleTransition(payingPayableId!, "pay", paidAt);
+          setPayingPayableId(null);
+        }}
       />
     </div>
   );

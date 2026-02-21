@@ -27,7 +27,7 @@ export interface PayableListItem {
 // Quick-filter pills set status OR tag (mutually exclusive).
 // Advanced filters (category, paymentMethod, dates) are independent.
 export interface PayableFilters {
-  status?: "PENDING" | "PAID" | "OVERDUE" | "CANCELLED";
+  status?: "PENDING" | "APPROVED" | "REJECTED" | "PAID" | "OVERDUE" | "CANCELLED";
   tag?: string;
   category?: "REVENDA" | "DESPESA";
   paymentMethod?:

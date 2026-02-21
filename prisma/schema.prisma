@@ -33,6 +33,8 @@ enum DocumentType {
 
 enum PayableStatus {
   PENDING
+  APPROVED
+  REJECTED
   PAID
   OVERDUE
   CANCELLED
@@ -120,6 +122,8 @@ model Payable {
   tags          String[]        @default([]) // Multi-select labels
   notes         String?
   paidAt        DateTime?       @map("paid_at") @db.Timestamptz
+  approvedBy    String?         @map("approved_by") @db.Uuid
+  approvedAt    DateTime?       @map("approved_at") @db.Timestamptz
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
   updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz
 

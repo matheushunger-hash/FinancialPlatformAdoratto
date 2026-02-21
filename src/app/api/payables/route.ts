@@ -22,7 +22,7 @@ const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
 };
 
 // Whitelist of valid filter values — unknown values are silently ignored
-const VALID_STATUSES = ["PENDING", "PAID", "OVERDUE", "CANCELLED"];
+const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID", "OVERDUE", "CANCELLED"];
 const VALID_CATEGORIES = ["REVENDA", "DESPESA"];
 const VALID_METHODS = [
   "BOLETO",
