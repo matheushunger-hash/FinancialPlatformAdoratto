@@ -23,7 +23,10 @@ const pool = new Pool({ connectionString: process.env.DIRECT_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-const SEED_PASSWORD = "Adoratto@2024";
+const SEED_PASSWORD = process.env.SEED_PASSWORD;
+if (!SEED_PASSWORD) {
+  throw new Error("SEED_PASSWORD is required in .env — used to create auth users");
+}
 
 const users = [
   { email: "adm@superadoratto.com.br", name: "Matheus", role: Role.ADMIN },

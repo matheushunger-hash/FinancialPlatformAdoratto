@@ -23,7 +23,8 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const supplier = await prisma.supplier.findUnique({ where: { id } });
+    // Scope by userId — prevents users from viewing another user's supplier
+    const supplier = await prisma.supplier.findFirst({ where: { id, userId: user.id } });
 
     if (!supplier) {
       return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
@@ -73,8 +74,8 @@ export async function PATCH(
   }
 
   try {
-    // Verify the supplier exists
-    const existing = await prisma.supplier.findUnique({ where: { id } });
+    // Verify the supplier exists AND belongs to this user (ownership check)
+    const existing = await prisma.supplier.findFirst({ where: { id, userId: user.id } });
     if (!existing) {
       return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
     }
@@ -128,7 +129,7 @@ export async function PATCH(
 
     // Check document uniqueness, excluding the current supplier
     const duplicate = await prisma.supplier.findFirst({
-      where: { document: strippedDocument },
+      where: { document: strippedDocument, userId: user.id },
     });
 
     if (duplicate && duplicate.id !== id) {

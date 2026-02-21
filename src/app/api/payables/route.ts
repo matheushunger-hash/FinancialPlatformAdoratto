@@ -107,7 +107,9 @@ export async function GET(request: NextRequest) {
     conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59") } });
   }
 
-  const where = conditions.length > 0 ? { AND: conditions } : {};
+  // Scope every query to the authenticated user — tenant isolation
+  conditions.push({ userId: user.id });
+  const where = { AND: conditions };
 
   try {
     const [total, payables] = await Promise.all([
@@ -193,6 +195,17 @@ export async function POST(request: NextRequest) {
   }
 
   const data = parsed.data;
+
+  // Verify the supplier belongs to this user — prevents linking to another user's supplier
+  const supplier = await prisma.supplier.findFirst({
+    where: { id: data.supplierId, userId: user.id },
+  });
+  if (!supplier) {
+    return NextResponse.json(
+      { error: "Fornecedor não encontrado" },
+      { status: 404 },
+    );
+  }
 
   // Convert currency strings to numbers for Prisma's Decimal type
   const parsedAmount = parseCurrency(data.amount);

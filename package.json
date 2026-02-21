@@ -13,7 +13,8 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "db:seed": "npx tsx prisma/seed.ts",
-    "db:import-suppliers": "npx tsx scripts/import-suppliers.ts"
+    "db:import-suppliers": "npx tsx scripts/import-suppliers.ts",
+    "db:reset-passwords": "npx tsx scripts/reset-passwords.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

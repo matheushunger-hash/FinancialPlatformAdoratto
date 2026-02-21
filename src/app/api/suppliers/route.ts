@@ -33,15 +33,17 @@ export async function GET(request: NextRequest) {
   // Prisma uses `contains` + `mode: "insensitive"` for case-insensitive search.
   // For the document field, we strip non-digits from the search term so users
   // can search by formatted or raw CNPJ/CPF.
+  // Scope every query to the authenticated user — tenant isolation
   const where = search
     ? {
+        userId: user.id,
         OR: [
           { name: { contains: search, mode: "insensitive" as const } },
           { tradeName: { contains: search, mode: "insensitive" as const } },
           { document: { contains: stripDocument(search) } },
         ],
       }
-    : {};
+    : { userId: user.id };
 
   // 4. Run both queries in parallel — count for pagination, find for data
   const [total, suppliers] = await Promise.all([
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
     // Check for duplicate document at the application level
     // (the DB unique constraint is a safety net, but we want a friendly error)
     const existing = await prisma.supplier.findFirst({
-      where: { document: strippedDocument },
+      where: { document: strippedDocument, userId: user.id },
     });
 
     if (existing) {
