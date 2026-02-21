@@ -43,7 +43,7 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 
 ## Session Log
 
-### 2026-02-21 — ADR-003: Authentication and Route Protection
+### 2026-02-21 — ADR-003: Authentication and Route Protection — CLOSED
 
 **What went well:**
 - Full auth flow implemented: login, logout, route protection, user seeding
@@ -63,7 +63,7 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Dashboard: layout fetches user profile, passes props to header
 - Logout button uses `<form action={signOut}>` for progressive enhancement
 
-### 2026-02-21 — ADR-004: Base Application Layout
+### 2026-02-21 — ADR-004: Base Application Layout — CLOSED
 
 **What went well:**
 - Collapsible sidebar layout using shadcn sidebar components (icon-only mode, mobile drawer)
