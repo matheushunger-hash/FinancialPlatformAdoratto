@@ -291,3 +291,28 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - **Two-phase schema migration**: Phase 1 (nullable) → backfill → Phase 2 (required) — safe pattern for adding required columns to tables with existing data
 - **Compound unique constraints**: `@@unique([tenantId, field])` for uniqueness scoped per organization instead of globally
 - **One-time migration scripts**: live in `scripts/`, use `as any` for post-migration type mismatches, include clear comments explaining why
+
+### 2026-02-21 — ADR-011: Batch Actions (Ações em Lote) — CLOSED
+
+**What went well:**
+- Row selection via TanStack Table's built-in `enableRowSelection` + shadcn Checkbox — "select all on page" with indeterminate state
+- Floating `BatchActionBar` at screen bottom: shows count + total R$, role-aware buttons (Aprovar is ADMIN-only)
+- Best-effort batch transition API (`POST /api/payables/batch-transition`) — processes up to 50 items independently, returns `{ succeeded, failed }` so partial success is possible
+- "Select all, filter at action time" design — users can select a mix of statuses, buttons show eligible counts and disable when 0
+- Batch pay reuses the existing `PayablePayDialog` (single date picker for all items) — zero duplication
+- Client-side CSV export with semicolon delimiter (Brazilian Excel standard) and UTF-8 BOM for accent support — downloads as `titulos-YYYY-MM-DD.csv`
+- Confirmation dialog (AlertDialog) for batch approve shows eligible count + total R$ before executing
+- Selection auto-clears on data refresh (page change, filter, sort) — prevents stale references
+- `npx tsc --noEmit` passes with zero errors, 8 files changed (3 modified, 5 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this ADR — patterns were well-established from ADR-010 and earlier
+
+**Patterns established:**
+- TanStack row selection: `enableRowSelection: true` + controlled `rowSelection` state (lifted to orchestrator) + `onRowSelectionChange` updater pattern handles both function and value forms
+- Batch API pattern: `POST /api/payables/batch-transition` with `{ ids[], action, paidAt? }` — loops through IDs with per-item validation (tenant scope, transition validity, role check), returns `{ succeeded[], failed[] }` instead of all-or-nothing
+- Floating action bar: `fixed bottom-4 left-1/2 -translate-x-1/2 z-50` with `shadow-lg` — returns `null` when `selectedCount === 0` (conditional rendering, not CSS hide)
+- Eligible-count buttons: compute `pendingCount` and `payableCount` from selected items, show in button label (`Aprovar (3)`), disable when 0 — user always knows how many items will be affected
+- CSV export pattern: client-side `Blob` + temporary `<a>` element — no server endpoint needed since data is already in memory (max 25 items/page). UTF-8 BOM (`\uFEFF`) prefix ensures Excel reads accents correctly. Semicolon delimiter is the Brazilian Excel standard
+- `escapeCSV()` helper: wraps values containing semicolons, quotes, or newlines in double-quotes, doubling inner quotes per RFC 4180
+- `AlertDialog` for destructive/batch confirmations vs `Dialog` for data-entry modals (payment date) — semantic distinction between "are you sure?" and "provide input"
