@@ -108,7 +108,14 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
+        // Try to parse JSON error — the server might return HTML on unexpected errors
+        let errorData: { error?: string; field?: string } = {};
+        try {
+          errorData = await res.json();
+        } catch {
+          toast.error(`Erro do servidor (${res.status})`);
+          return;
+        }
 
         // If it's a uniqueness error, show it on the document field
         if (res.status === 409 && errorData.field === "document") {

@@ -86,7 +86,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   // Validate the request body against our Zod schema
   const parsed = supplierFormSchema.safeParse(body);
@@ -100,43 +105,49 @@ export async function POST(request: NextRequest) {
   const data = parsed.data;
   const strippedDocument = stripDocument(data.document);
 
-  // Check for duplicate document at the application level
-  // (the DB unique constraint is a safety net, but we want a friendly error)
-  const existing = await prisma.supplier.findUnique({
-    where: { document: strippedDocument },
-  });
+  try {
+    // Check for duplicate document at the application level
+    // (the DB unique constraint is a safety net, but we want a friendly error)
+    const existing = await prisma.supplier.findFirst({
+      where: { document: strippedDocument },
+    });
 
-  if (existing) {
+    if (existing) {
+      return NextResponse.json(
+        { error: "Já existe um fornecedor com este documento", field: "document" },
+        { status: 409 },
+      );
+    }
+
+    const supplier = await prisma.supplier.create({
+      data: {
+        userId: user.id,
+        name: data.name,
+        documentType: data.documentType,
+        document: strippedDocument,
+        tradeName: data.tradeName || null,
+        contactName: data.contactName || null,
+        email: data.email || null,
+        phone: data.phone || null,
+        bankName: data.bankName || null,
+        bankAgency: data.bankAgency || null,
+        bankAccount: data.bankAccount || null,
+        pixKey: data.pixKey || null,
+        notes: data.notes || null,
+      },
+    });
+
     return NextResponse.json(
-      { error: "Já existe um fornecedor com este documento", field: "document" },
-      { status: 409 },
+      {
+        ...supplier,
+        createdAt: supplier.createdAt.toISOString(),
+        updatedAt: supplier.updatedAt.toISOString(),
+      },
+      { status: 201 },
     );
+  } catch (err) {
+    console.error("[POST /api/suppliers] error:", err);
+    const message = err instanceof Error ? err.message : "Erro interno do servidor";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const supplier = await prisma.supplier.create({
-    data: {
-      userId: user.id,
-      name: data.name,
-      documentType: data.documentType,
-      document: strippedDocument,
-      tradeName: data.tradeName || null,
-      contactName: data.contactName || null,
-      email: data.email || null,
-      phone: data.phone || null,
-      bankName: data.bankName || null,
-      bankAgency: data.bankAgency || null,
-      bankAccount: data.bankAccount || null,
-      pixKey: data.pixKey || null,
-      notes: data.notes || null,
-    },
-  });
-
-  return NextResponse.json(
-    {
-      ...supplier,
-      createdAt: supplier.createdAt.toISOString(),
-      updatedAt: supplier.updatedAt.toISOString(),
-    },
-    { status: 201 },
-  );
 }

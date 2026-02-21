@@ -22,17 +22,23 @@ export async function GET(
 
   const { id } = await params;
 
-  const supplier = await prisma.supplier.findUnique({ where: { id } });
+  try {
+    const supplier = await prisma.supplier.findUnique({ where: { id } });
 
-  if (!supplier) {
-    return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
+    if (!supplier) {
+      return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      ...supplier,
+      createdAt: supplier.createdAt.toISOString(),
+      updatedAt: supplier.updatedAt.toISOString(),
+    });
+  } catch (err) {
+    console.error("[GET /api/suppliers/[id]] error:", err);
+    const message = err instanceof Error ? err.message : "Erro interno do servidor";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  return NextResponse.json({
-    ...supplier,
-    createdAt: supplier.createdAt.toISOString(),
-    updatedAt: supplier.updatedAt.toISOString(),
-  });
 }
 
 // =============================================================================
@@ -58,40 +64,96 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  const body = await request.json();
 
-  // Verify the supplier exists
-  const existing = await prisma.supplier.findUnique({ where: { id } });
-  if (!existing) {
-    return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // --- Mode 1: Status toggle (soft delete / reactivate) ---
-  if ("active" in body && Object.keys(body).length === 1) {
-    const active = Boolean(body.active);
+  try {
+    // Verify the supplier exists
+    const existing = await prisma.supplier.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
+    }
 
-    // If deactivating, check for open payables linked to this supplier
-    if (!active) {
-      const openPayables = await prisma.payable.count({
-        where: {
-          supplierId: id,
-          status: { in: ["PENDING", "OVERDUE"] },
-        },
+    // --- Mode 1: Status toggle (soft delete / reactivate) ---
+    if (typeof body === "object" && body !== null && "active" in body && Object.keys(body).length === 1) {
+      const active = Boolean((body as { active: unknown }).active);
+
+      // If deactivating, check for open payables linked to this supplier
+      if (!active) {
+        const openPayables = await prisma.payable.count({
+          where: {
+            supplierId: id,
+            status: { in: ["PENDING", "OVERDUE"] },
+          },
+        });
+
+        if (openPayables > 0) {
+          return NextResponse.json(
+            {
+              error: `Não é possível desativar: fornecedor possui ${openPayables} título(s) em aberto`,
+            },
+            { status: 409 },
+          );
+        }
+      }
+
+      const updated = await prisma.supplier.update({
+        where: { id },
+        data: { active },
       });
 
-      if (openPayables > 0) {
-        return NextResponse.json(
-          {
-            error: `Não é possível desativar: fornecedor possui ${openPayables} título(s) em aberto`,
-          },
-          { status: 409 },
-        );
-      }
+      return NextResponse.json({
+        ...updated,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+      });
+    }
+
+    // --- Mode 2: Full field edit ---
+    const parsed = supplierFormSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation failed", issues: parsed.error.issues },
+        { status: 400 },
+      );
+    }
+
+    const data = parsed.data;
+    const strippedDocument = stripDocument(data.document);
+
+    // Check document uniqueness, excluding the current supplier
+    const duplicate = await prisma.supplier.findFirst({
+      where: { document: strippedDocument },
+    });
+
+    if (duplicate && duplicate.id !== id) {
+      return NextResponse.json(
+        { error: "Já existe um fornecedor com este documento", field: "document" },
+        { status: 409 },
+      );
     }
 
     const updated = await prisma.supplier.update({
       where: { id },
-      data: { active },
+      data: {
+        name: data.name,
+        documentType: data.documentType,
+        document: strippedDocument,
+        tradeName: data.tradeName || null,
+        contactName: data.contactName || null,
+        email: data.email || null,
+        phone: data.phone || null,
+        bankName: data.bankName || null,
+        bankAgency: data.bankAgency || null,
+        bankAccount: data.bankAccount || null,
+        pixKey: data.pixKey || null,
+        notes: data.notes || null,
+      },
     });
 
     return NextResponse.json({
@@ -99,53 +161,9 @@ export async function PATCH(
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     });
+  } catch (err) {
+    console.error("[PATCH /api/suppliers/[id]] error:", err);
+    const message = err instanceof Error ? err.message : "Erro interno do servidor";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  // --- Mode 2: Full field edit ---
-  const parsed = supplierFormSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", issues: parsed.error.issues },
-      { status: 400 },
-    );
-  }
-
-  const data = parsed.data;
-  const strippedDocument = stripDocument(data.document);
-
-  // Check document uniqueness, excluding the current supplier
-  const duplicate = await prisma.supplier.findUnique({
-    where: { document: strippedDocument },
-  });
-
-  if (duplicate && duplicate.id !== id) {
-    return NextResponse.json(
-      { error: "Já existe um fornecedor com este documento", field: "document" },
-      { status: 409 },
-    );
-  }
-
-  const updated = await prisma.supplier.update({
-    where: { id },
-    data: {
-      name: data.name,
-      documentType: data.documentType,
-      document: strippedDocument,
-      tradeName: data.tradeName || null,
-      contactName: data.contactName || null,
-      email: data.email || null,
-      phone: data.phone || null,
-      bankName: data.bankName || null,
-      bankAgency: data.bankAgency || null,
-      bankAccount: data.bankAccount || null,
-      pixKey: data.pixKey || null,
-      notes: data.notes || null,
-    },
-  });
-
-  return NextResponse.json({
-    ...updated,
-    createdAt: updated.createdAt.toISOString(),
-    updatedAt: updated.updatedAt.toISOString(),
-  });
 }
