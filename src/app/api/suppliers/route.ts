@@ -27,20 +27,24 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get("search")?.trim() || "";
 
   // 3. Build the WHERE clause for filtering
-  // Prisma uses `contains` + `mode: "insensitive"` for case-insensitive search.
-  // For the document field, we strip non-digits from the search term so users
-  // can search by formatted or raw CNPJ/CPF.
-  // Scope every query to the tenant — everyone in the org sees the same suppliers
-  const where = search
-    ? {
-        tenantId: ctx.tenantId,
-        OR: [
-          { name: { contains: search, mode: "insensitive" as const } },
-          { tradeName: { contains: search, mode: "insensitive" as const } },
-          { document: { contains: stripDocument(search) } },
-        ],
-      }
-    : { tenantId: ctx.tenantId };
+  // Only include the document condition when the search term has digits —
+  // otherwise stripDocument returns "" which matches every row via `contains`.
+  const searchConditions: Prisma.SupplierWhereInput[] = [];
+  if (search) {
+    searchConditions.push(
+      { name: { contains: search, mode: "insensitive" as const } },
+      { tradeName: { contains: search, mode: "insensitive" as const } },
+    );
+    const strippedSearch = stripDocument(search);
+    if (strippedSearch) {
+      searchConditions.push({ document: { contains: strippedSearch } });
+    }
+  }
+
+  const where: Prisma.SupplierWhereInput = {
+    tenantId: ctx.tenantId,
+    ...(searchConditions.length > 0 && { OR: searchConditions }),
+  };
 
   // 4. Run both queries in parallel — count for pagination, find for data
   const [total, suppliers] = await Promise.all([
