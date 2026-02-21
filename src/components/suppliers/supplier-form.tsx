@@ -80,6 +80,14 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
     },
   });
 
+  // Strip formatting when the user focuses the input — so they work with raw digits
+  function handleDocumentFocus() {
+    const raw = stripDocument(form.getValues("document"));
+    if (raw !== form.getValues("document")) {
+      form.setValue("document", raw);
+    }
+  }
+
   // Format the document field when the user leaves the input
   function handleDocumentBlur() {
     const docType = form.getValues("documentType");
@@ -209,8 +217,11 @@ export function SupplierForm({ supplier, onSuccess }: SupplierFormProps) {
                       }
                       {...field}
                       maxLength={
-                        form.watch("documentType") === "CNPJ" ? 18 : 14
+                        form.watch("documentType") === "CNPJ" ? 14 : 11
                       }
+                      onFocus={() => {
+                        handleDocumentFocus();
+                      }}
                       onBlur={() => {
                         field.onBlur();
                         handleDocumentBlur();
