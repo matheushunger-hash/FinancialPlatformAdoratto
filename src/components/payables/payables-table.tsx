@@ -206,9 +206,9 @@ const columns = [
         return <span className="text-muted-foreground">—</span>;
       }
       return (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex gap-1 max-w-[220px] overflow-hidden">
           {tags.map((tag) => (
-            <Badge key={tag} variant="outline" className="text-xs">
+            <Badge key={tag} variant="outline" className="text-xs whitespace-nowrap">
               {TAG_LABELS[tag] ?? tag}
             </Badge>
           ))}
