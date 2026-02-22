@@ -74,7 +74,7 @@ export function DashboardView() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Snapshot KPIs — always live, independent of period filter */}
       <KPICards
         data={data}

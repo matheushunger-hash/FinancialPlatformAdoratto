@@ -10,6 +10,8 @@ export interface KPICard {
   value: number; // Sum in R$
   count: number; // Number of payables
   percentOfPlan?: number; // Only for "Pagos no Período" (0–100)
+  delta?: number; // % change vs previous equivalent period (e.g., +12 or -5)
+  sparkline?: number[]; // Daily values for sparkline mini-chart
 }
 
 export interface DashboardKPIs {

@@ -12,6 +12,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Label,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,19 +23,19 @@ import type {
 } from "@/lib/dashboard/types";
 
 // =============================================================================
-// Dashboard Charts Component (ADR-015)
+// Dashboard Charts Component — Stripe/Linear aesthetic (#39)
 // =============================================================================
-// Renders 3 Recharts charts: stacked bar (daily payments), donut (status
-// distribution), and horizontal bar (top 10 suppliers). Receives data as props
-// from the DashboardView orchestrator.
+// 3 Recharts charts: stacked bar (daily payments), donut with center label
+// (status distribution), horizontal bar with background tracks (top suppliers).
+// Dark navy tooltips in light mode, popover colors in dark mode.
 // =============================================================================
 
-// -- Status color map (hex for Recharts SVG fills) --
+// -- Status color map (updated for Stripe palette) --
 const STATUS_COLORS: Record<string, string> = {
-  PENDING: "#f59e0b", // amber
-  APPROVED: "#3b82f6", // blue
-  PAID: "#22c55e", // green
-  OVERDUE: "#ef4444", // red
+  PENDING: "#F59E0B", // amber
+  APPROVED: "#635BFF", // purple (was blue)
+  PAID: "#00D4AA", // teal (was green)
+  OVERDUE: "#DF1B41", // red (updated)
   REJECTED: "#6b7280", // gray
   CANCELLED: "#9ca3af", // light gray
 };
@@ -72,9 +73,11 @@ function formatCompactBRL(value: number): string {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
-// -- Custom Tooltip --
-// Recharts tooltips need custom styling to work well in dark mode.
-// We use CSS variables from the shadcn theme for background/border/text.
+// Dark tooltip class string — dark navy in light mode, popover in dark mode
+const TOOLTIP_CLASS =
+  "rounded-lg border-0 bg-[#0A2540] px-3 py-2.5 text-sm text-white shadow-xl dark:border dark:bg-popover dark:text-popover-foreground";
+
+// -- Custom Tooltips --
 
 interface TooltipPayload {
   name: string;
@@ -105,7 +108,7 @@ function CustomBarTooltip({
   if (nonZero.length === 0) return null;
 
   return (
-    <div className="rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
+    <div className={TOOLTIP_CLASS}>
       <p className="mb-1 font-medium">{label ? formatDateLabel(label) : ""}</p>
       {nonZero.map((entry) => (
         <div key={entry.dataKey} className="flex items-center gap-2">
@@ -132,7 +135,7 @@ function CustomPieTooltip({
 
   const entry = payload[0];
   return (
-    <div className="rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
+    <div className={TOOLTIP_CLASS}>
       <span>{STATUS_LABELS[entry.payload.status] ?? entry.name}: </span>
       <span className="font-medium">
         {entry.value} título{entry.value !== 1 ? "s" : ""}
@@ -152,7 +155,7 @@ function CustomSupplierTooltip({
 
   const entry = payload[0];
   return (
-    <div className="rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
+    <div className={TOOLTIP_CLASS}>
       <p className="mb-1 font-medium">{entry.payload.supplierName}</p>
       <p className="tabular-nums">{formatBRL(entry.value)}</p>
     </div>
@@ -175,7 +178,7 @@ function ChartSkeleton() {
   return (
     <div className="space-y-6">
       {/* Full-width chart skeleton */}
-      <Card>
+      <Card className="rounded-xl shadow-sm">
         <CardHeader>
           <Skeleton className="h-5 w-48" />
         </CardHeader>
@@ -185,7 +188,7 @@ function ChartSkeleton() {
       </Card>
       {/* Two side-by-side chart skeletons */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
+        <Card className="rounded-xl shadow-sm">
           <CardHeader>
             <Skeleton className="h-5 w-40" />
           </CardHeader>
@@ -193,7 +196,7 @@ function ChartSkeleton() {
             <Skeleton className="h-[300px] w-full" />
           </CardContent>
         </Card>
-        <Card>
+        <Card className="rounded-xl shadow-sm">
           <CardHeader>
             <Skeleton className="h-5 w-44" />
           </CardHeader>
@@ -227,10 +230,16 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
   // Axis tick style — uses currentColor so it adapts to light/dark mode
   const tickStyle = { fill: "currentColor", fontSize: 12 };
 
+  // Total count for donut center label
+  const donutTotal = charts.statusDistribution.reduce(
+    (sum, s) => sum + s.count,
+    0,
+  );
+
   return (
     <div className="space-y-6">
       {/* Chart 1 — Stacked bar: daily payments by status (full width) */}
-      <Card>
+      <Card className="rounded-xl shadow-sm">
         <CardHeader>
           <CardTitle className="text-base">
             Pagamentos por Dia
@@ -243,8 +252,8 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={charts.dailyPayments}>
                 <CartesianGrid
-                  strokeDasharray="3 3"
                   className="stroke-border"
+                  strokeOpacity={0.5}
                 />
                 <XAxis
                   dataKey="date"
@@ -265,13 +274,17 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                     STATUS_LABELS[value] ?? value
                   }
                 />
-                {ALL_STATUSES.map((status) => (
+                {ALL_STATUSES.map((status, index) => (
                   <Bar
                     key={status}
                     dataKey={status}
                     stackId="a"
                     fill={STATUS_COLORS[status]}
-                    radius={0}
+                    radius={
+                      index === ALL_STATUSES.length - 1
+                        ? [4, 4, 0, 0]
+                        : undefined
+                    }
                   />
                 ))}
               </BarChart>
@@ -282,8 +295,8 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
 
       {/* Bottom row: donut (left) + top suppliers (right) */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        {/* Chart 2 — Donut: status distribution */}
-        <Card>
+        {/* Chart 2 — Donut: status distribution with center label */}
+        <Card className="rounded-xl shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">
               Distribuição por Status
@@ -311,6 +324,39 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                         fill={STATUS_COLORS[entry.status] ?? "#9ca3af"}
                       />
                     ))}
+                    <Label
+                      content={({ viewBox }) => {
+                        if (
+                          viewBox &&
+                          "cx" in viewBox &&
+                          "cy" in viewBox
+                        ) {
+                          return (
+                            <text
+                              x={viewBox.cx}
+                              y={viewBox.cy}
+                              textAnchor="middle"
+                              dominantBaseline="middle"
+                            >
+                              <tspan
+                                x={viewBox.cx}
+                                dy="-0.5em"
+                                className="fill-foreground text-2xl font-bold"
+                              >
+                                {donutTotal}
+                              </tspan>
+                              <tspan
+                                x={viewBox.cx}
+                                dy="1.5em"
+                                className="fill-muted-foreground text-xs"
+                              >
+                                títulos
+                              </tspan>
+                            </text>
+                          );
+                        }
+                      }}
+                    />
                   </Pie>
                   <Tooltip content={<CustomPieTooltip />} />
                   <Legend
@@ -324,8 +370,8 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
           </CardContent>
         </Card>
 
-        {/* Chart 3 — Horizontal bar: top 10 suppliers */}
-        <Card>
+        {/* Chart 3 — Horizontal bar: top 10 suppliers with background tracks */}
+        <Card className="rounded-xl shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">
               Top 10 Fornecedores por Valor
@@ -342,8 +388,8 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                   margin={{ left: 20 }}
                 >
                   <CartesianGrid
-                    strokeDasharray="3 3"
                     className="stroke-border"
+                    strokeOpacity={0.5}
                     horizontal={false}
                   />
                   <XAxis
@@ -364,8 +410,9 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                   <Tooltip content={<CustomSupplierTooltip />} />
                   <Bar
                     dataKey="total"
-                    fill="#3b82f6"
+                    fill="#635BFF"
                     radius={[0, 4, 4, 0]}
+                    background={{ fill: "var(--color-muted)", radius: 4 }}
                   />
                 </BarChart>
               </ResponsiveContainer>

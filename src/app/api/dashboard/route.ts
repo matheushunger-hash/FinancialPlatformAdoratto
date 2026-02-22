@@ -9,13 +9,36 @@ import type {
 // =============================================================================
 // GET /api/dashboard — Financial KPI aggregations + chart data
 // =============================================================================
-// Returns 6 KPI cards and 3 chart datasets for the dashboard.
+// Returns 6 KPI cards (with deltas + sparklines for period-filtered KPIs)
+// and 3 chart datasets for the dashboard.
 // All queries are scoped by tenantId.
 //
 // Query params:
 //   from (ISO date, e.g. "2026-02-01") — defaults to 1st of current month
 //   to   (ISO date, e.g. "2026-02-28") — defaults to last day of current month
 // =============================================================================
+
+// Compute % change between current and previous values
+function computeDelta(current: number, previous: number): number {
+  if (previous === 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 100);
+}
+
+// Build a sparkline array from a Map of day → value, filling zero for missing days
+function buildSparkline(
+  byDay: Map<string, number>,
+  rangeStart: Date,
+  rangeEnd: Date,
+): number[] {
+  const values: number[] = [];
+  const cursor = new Date(rangeStart);
+  while (cursor <= rangeEnd) {
+    const day = cursor.toISOString().split("T")[0];
+    values.push(byDay.get(day) ?? 0);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return values;
+}
 
 export async function GET(request: NextRequest) {
   const ctx = await getAuthContext();
@@ -37,6 +60,14 @@ export async function GET(request: NextRequest) {
   const rangeStart = new Date(fromParam + "T00:00:00.000Z");
   const rangeEnd = new Date(toParam + "T23:59:59.999Z");
 
+  // Previous equivalent period: same duration, immediately before selected range
+  // e.g., Feb 1–28 (28 days) → Jan 4–31 (28 days)
+  const periodMs = rangeEnd.getTime() - rangeStart.getTime();
+  const prevRangeEnd = new Date(rangeStart.getTime() - 1);
+  prevRangeEnd.setUTCHours(23, 59, 59, 999);
+  const prevRangeStart = new Date(rangeStart.getTime() - periodMs - 86400000);
+  prevRangeStart.setUTCHours(0, 0, 0, 0);
+
   // "today" at midnight local time — used for overdue/due-soon comparisons
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -51,7 +82,7 @@ export async function GET(request: NextRequest) {
   const tenantScope = { tenantId: ctx.tenantId };
 
   try {
-    // Run all 10 queries in parallel for best performance
+    // Run all 15 queries in parallel for best performance
     const [
       totalPayable,
       overdue,
@@ -63,6 +94,13 @@ export async function GET(request: NextRequest) {
       topSuppliersRaw,
       dueInPeriod,
       insuredInPeriod,
+      // Previous period deltas (queries 11-13)
+      prevPaid,
+      prevDueInPeriod,
+      prevInsured,
+      // Sparkline data (queries 14-15)
+      paidSparklineRaw,
+      insuredSparklineRaw,
     ] = await Promise.all([
       // 1. Total a Pagar — all PENDING + APPROVED payables
       prisma.payable.aggregate({
@@ -169,6 +207,60 @@ export async function GET(request: NextRequest) {
         _sum: { payValue: true },
         _count: true,
       }),
+
+      // 11. Previous period — paid (for delta comparison)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: "PAID",
+          paidAt: { gte: prevRangeStart, lte: prevRangeEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 12. Previous period — dueInPeriod (for delta comparison)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: prevRangeStart, lte: prevRangeEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 13. Previous period — insuredInPeriod (for delta comparison)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          tags: { has: "segurado" },
+          dueDate: { gte: prevRangeStart, lte: prevRangeEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 14. Sparkline — daily paid amounts (findMany because paidAt is DateTime)
+      prisma.payable.findMany({
+        where: {
+          ...tenantScope,
+          status: "PAID",
+          paidAt: { gte: rangeStart, lte: rangeEnd },
+        },
+        select: { paidAt: true, payValue: true },
+      }),
+
+      // 15. Sparkline — daily insured amounts
+      prisma.payable.groupBy({
+        by: ["dueDate"],
+        where: {
+          ...tenantScope,
+          tags: { has: "segurado" },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        _sum: { payValue: true },
+      }),
     ]);
 
     // Calculate percentage: paid / planned * 100
@@ -225,6 +317,36 @@ export async function GET(request: NextRequest) {
       total: Number(row._sum.payValue ?? 0),
     }));
 
+    // ---- Build sparklines ----
+
+    // Sparkline for paidThisMonth: group findMany results by paidAt date
+    const paidByDay = new Map<string, number>();
+    for (const row of paidSparklineRaw) {
+      if (!row.paidAt) continue;
+      const day = row.paidAt.toISOString().split("T")[0];
+      paidByDay.set(day, (paidByDay.get(day) ?? 0) + Number(row.payValue ?? 0));
+    }
+    const paidSparkline = buildSparkline(paidByDay, rangeStart, rangeEnd);
+
+    // Sparkline for dueInPeriod: sum PENDING + APPROVED per day from dailyPayments
+    const dueSparkline = dailyPayments.map((d) => d.PENDING + d.APPROVED);
+
+    // Sparkline for insuredInPeriod: from groupBy results
+    const insuredByDay = new Map<string, number>();
+    for (const row of insuredSparklineRaw) {
+      const day = row.dueDate.toISOString().split("T")[0];
+      insuredByDay.set(day, Number(row._sum.payValue ?? 0));
+    }
+    const insuredSparkline = buildSparkline(insuredByDay, rangeStart, rangeEnd);
+
+    // ---- Compute deltas ----
+    const dueInPeriodValue = Number(dueInPeriod._sum.payValue ?? 0);
+    const insuredInPeriodValue = Number(insuredInPeriod._sum.payValue ?? 0);
+
+    const paidDelta = computeDelta(paidSum, Number(prevPaid._sum.payValue ?? 0));
+    const dueDelta = computeDelta(dueInPeriodValue, Number(prevDueInPeriod._sum.payValue ?? 0));
+    const insuredDelta = computeDelta(insuredInPeriodValue, Number(prevInsured._sum.payValue ?? 0));
+
     // ---- Build response ----
     const response: DashboardResponse = {
       totalPayable: {
@@ -247,16 +369,22 @@ export async function GET(request: NextRequest) {
         value: paidSum,
         count: paidThisMonth._count,
         percentOfPlan,
+        delta: paidDelta,
+        sparkline: paidSparkline,
       },
       dueInPeriod: {
         label: "A Vencer no Período",
-        value: Number(dueInPeriod._sum.payValue ?? 0),
+        value: dueInPeriodValue,
         count: dueInPeriod._count,
+        delta: dueDelta,
+        sparkline: dueSparkline,
       },
       insuredInPeriod: {
         label: "Segurado no Período",
-        value: Number(insuredInPeriod._sum.payValue ?? 0),
+        value: insuredInPeriodValue,
         count: insuredInPeriod._count,
+        delta: insuredDelta,
+        sparkline: insuredSparkline,
       },
       charts: {
         dailyPayments,

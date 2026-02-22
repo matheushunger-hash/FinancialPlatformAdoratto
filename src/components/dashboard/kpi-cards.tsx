@@ -7,88 +7,105 @@ import {
   CheckCircle,
   CalendarClock,
   ShieldCheck,
+  TrendingUp,
+  TrendingDown,
   type LucideIcon,
 } from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  ResponsiveContainer,
+} from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import type { DashboardKPIs, KPICard } from "@/lib/dashboard/types";
 
 // =============================================================================
-// KPI Cards Component
+// KPI Cards Component — Stripe/Linear aesthetic (#39)
 // =============================================================================
-// Fetches dashboard aggregations and renders 4 color-coded financial KPI cards.
-// Each card shows: icon + label, R$ value (large), count subtitle, and
-// optionally a "% do planejado" line for the "Pagos no Mês" card.
+// Clean white card surfaces with subtle shadows, large typography, optional
+// delta % badge and sparkline mini-chart for period-filtered KPIs.
 // =============================================================================
 
-// Color and icon configuration for each KPI card
+// Icon configuration for each KPI card (no color config — clean surfaces only)
 interface CardConfig {
   key: keyof DashboardKPIs;
   icon: LucideIcon;
-  color: string; // Tailwind color class prefix (e.g. "blue" → text-blue-500)
-  borderColor: string; // Left border accent color
-  iconColor: string; // Icon color
 }
 
 const CARD_CONFIGS: CardConfig[] = [
-  {
-    key: "totalPayable",
-    icon: DollarSign,
-    color: "blue",
-    borderColor: "border-l-blue-500",
-    iconColor: "text-blue-500",
-  },
-  {
-    key: "overdue",
-    icon: AlertTriangle,
-    color: "red",
-    borderColor: "border-l-red-500",
-    iconColor: "text-red-500",
-  },
-  {
-    key: "dueSoon",
-    icon: Clock,
-    color: "amber",
-    borderColor: "border-l-amber-500",
-    iconColor: "text-amber-500",
-  },
-  {
-    key: "paidThisMonth",
-    icon: CheckCircle,
-    color: "green",
-    borderColor: "border-l-green-500",
-    iconColor: "text-green-500",
-  },
-  {
-    key: "dueInPeriod",
-    icon: CalendarClock,
-    color: "purple",
-    borderColor: "border-l-purple-500",
-    iconColor: "text-purple-500",
-  },
-  {
-    key: "insuredInPeriod",
-    icon: ShieldCheck,
-    color: "teal",
-    borderColor: "border-l-teal-500",
-    iconColor: "text-teal-500",
-  },
+  { key: "totalPayable", icon: DollarSign },
+  { key: "overdue", icon: AlertTriangle },
+  { key: "dueSoon", icon: Clock },
+  { key: "paidThisMonth", icon: CheckCircle },
+  { key: "dueInPeriod", icon: CalendarClock },
+  { key: "insuredInPeriod", icon: ShieldCheck },
 ];
 
 function formatBRL(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// Skeleton placeholder shown while data is loading
+// -- Delta badge: shows +X% or -X% with trending arrow icon --
+function DeltaBadge({ delta }: { delta: number }) {
+  if (delta === 0) return null;
+  const isPositive = delta > 0;
+  const Icon = isPositive ? TrendingUp : TrendingDown;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 text-xs font-medium",
+        isPositive
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-red-600 dark:text-red-400",
+      )}
+    >
+      <Icon className="h-3 w-3" />
+      {isPositive ? "+" : ""}
+      {delta}%
+    </span>
+  );
+}
+
+// -- Sparkline: tiny area chart with gradient fill --
+function SparklineChart({ data, kpiKey }: { data: number[]; kpiKey: string }) {
+  const chartData = data.map((v) => ({ v }));
+  const gradientId = `spark-${kpiKey}`;
+  return (
+    <div className="mt-3 h-10 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#635BFF" stopOpacity={0.25} />
+              <stop offset="100%" stopColor="#635BFF" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="v"
+            stroke="#635BFF"
+            fill={`url(#${gradientId})`}
+            strokeWidth={1.5}
+            dot={false}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// -- Skeleton placeholder shown while data is loading --
 function KPICardSkeleton() {
   return (
-    <Card className="border-l-4 border-l-muted">
-      <CardContent className="pt-6">
+    <Card className="rounded-xl shadow-sm">
+      <CardContent className="p-6">
         <div className="flex items-center gap-2">
           <Skeleton className="h-4 w-4 rounded" />
           <Skeleton className="h-4 w-24" />
         </div>
-        <Skeleton className="mt-3 h-8 w-32" />
+        <Skeleton className="mt-3 h-8 w-36" />
         <Skeleton className="mt-2 h-4 w-20" />
       </CardContent>
     </Card>
@@ -149,20 +166,20 @@ export function KPICards({ data, loading, error, keys }: KPICardsProps) {
         const Icon = config.icon;
 
         return (
-          <Card
-            key={config.key}
-            className={`border-l-4 ${config.borderColor}`}
-          >
-            <CardContent className="pt-6">
+          <Card key={config.key} className="rounded-xl shadow-sm">
+            <CardContent className="p-6">
               {/* Label row with icon */}
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Icon className={`h-4 w-4 ${config.iconColor}`} />
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Icon className="h-4 w-4" />
                 {kpi.label}
               </div>
 
-              {/* R$ value — large and bold */}
-              <div className="mt-1 text-2xl font-bold tabular-nums">
-                {formatBRL(kpi.value)}
+              {/* Value + delta row */}
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-semibold tracking-tight tabular-nums">
+                  {formatBRL(kpi.value)}
+                </span>
+                {kpi.delta !== undefined && <DeltaBadge delta={kpi.delta} />}
               </div>
 
               {/* Count subtitle */}
@@ -170,11 +187,16 @@ export function KPICards({ data, loading, error, keys }: KPICardsProps) {
                 {kpi.count} título{kpi.count !== 1 ? "s" : ""}
               </p>
 
-              {/* Percentage line — only for "Pagos no Mês" */}
+              {/* Percentage line (paidThisMonth only) */}
               {kpi.percentOfPlan !== undefined && (
-                <p className="mt-1 text-sm font-medium text-green-600 dark:text-green-400">
+                <p className="mt-1 text-sm font-medium text-emerald-600 dark:text-emerald-400">
                   {kpi.percentOfPlan}% do planejado
                 </p>
+              )}
+
+              {/* Sparkline (period-filtered KPIs only) */}
+              {kpi.sparkline && kpi.sparkline.length > 1 && (
+                <SparklineChart data={kpi.sparkline} kpiKey={config.key} />
               )}
             </CardContent>
           </Card>
