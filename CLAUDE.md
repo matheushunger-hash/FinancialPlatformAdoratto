@@ -148,7 +148,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export)
 
 Full session history: `docs/session-log.md`
 
@@ -494,3 +494,22 @@ Full session history: `docs/session-log.md`
 - Audit metadata Card pattern: `Card` > `CardHeader` (title + badge) > `CardContent` (avatar sections separated by `Separator`) — reusable for any entity's audit trail
 - `formatDistanceToNow` with `{ addSuffix: true, locale: ptBR }` for Portuguese relative times — "há 3 dias", "há 2 horas"
 - Native `title` attribute for absolute date tooltips — zero-dependency alternative to tooltip components for simple hover info
+
+### 2026-02-22 — ADR-019: Server-Side CSV Export (Exportação CSV) — CLOSED
+
+**What went well:**
+- New `GET /api/export` route exports all filtered payables as a downloadable CSV — same filter params as `GET /api/payables` but no pagination (fetches all matching rows, up to 5000)
+- "Exportar" button in toolbar shows total count (`Exportar (47)`) so the user knows how many rows they're getting
+- Same CSV format as the existing client-side export: semicolons, UTF-8 BOM, dd/MM/yyyy dates, Brazilian decimal format
+- Two export paths coexist cleanly: toolbar button (all filtered, server-side) vs batch bar button (selected rows, client-side)
+- Also improved the import wizard: description field is now optional, falls back to supplier name
+- `npx tsc --noEmit` passes with zero errors, 4 files changed (1 new, 3 modified), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this session — patterns were well-established from ADR-011 (batch actions/CSV export) and ADR-009 (filters)
+
+**Patterns established:**
+- Server-side CSV export pattern: `GET /api/export` with same filter params as the list route, `take: MAX_EXPORT_ROWS` safety cap, returns `new Response(csv)` with `Content-Type: text/csv` and `Content-Disposition: attachment`
+- Download trigger pattern: `window.open("/api/export?" + params)` — browser handles the download natively, no Blob/anchor trick needed on the client
+- Filter param reuse: `handleExport()` builds the same `URLSearchParams` as `fetchPayables()` minus pagination — ensures the export always matches what the user sees in the table
+- Duplicating small filter/formatting logic across routes is acceptable when there are only 2 consumers — extract into a shared helper when a 3rd appears
