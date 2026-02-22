@@ -44,6 +44,32 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Password reset: `NEW_PASSWORD="..." npm run db:reset-passwords` (uses Supabase Admin API)
 - Tenant backfill: `npm run db:backfill-tenant` (one-time script, already run)
 
+## Project Structure
+When working in this monorepo/project, always confirm the correct working directory before running npm commands. The main project is in the `landing-page` or app-specific subdirectory, not the repo root.
+
+## Dev Server
+Always kill any existing process on port 3000 before starting the dev server with `npm run dev`. Use `lsof -ti:3000 | xargs kill -9 2>/dev/null` first.
+
+## Git Workflow
+After any git merge, rebase, or PR merge, always `git pull` the working branch before running the dev server or making further changes.
+
+## Build & Validation
+This is a TypeScript/Next.js project using Prisma + Supabase. Always ensure zero TypeScript errors before committing. Run `npx tsc --noEmit` to verify.
+
+## Coding Standards
+- After implementing any feature, always guard against undefined/null data in UI components (especially when data comes from async API calls). Never assume API data is present on first render.
+- When implementing features that touch database values (status enums, document types, etc.), always normalize casing. Database values may be mixed-case (`'Paid'`) while code uses uppercase (`'PAID'`) or lowercase. Use `.toUpperCase()` or a normalization layer consistently.
+
+## Feature Implementation Workflow
+Standard workflow for completing an ADR/feature:
+1. Implement all files
+2. Run TypeScript check (`npx tsc --noEmit`)
+3. Test in dev server
+4. Commit and push
+5. Update docs/CLAUDE.md with session log
+6. Close GitHub issue
+7. Begin planning next ADR
+
 ---
 
 ## Session Log
