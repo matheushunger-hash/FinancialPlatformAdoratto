@@ -181,7 +181,7 @@ function buildColumns(
       id: "dueDate",
       header: "Vencimento",
       cell: (info) => {
-        const dateStr = info.getValue();
+        const dateStr = info.getValue().split("T")[0]; // "2026-02-20T00:00:00.000Z" → "2026-02-20"
         const date = new Date(dateStr + "T12:00:00");
         const formatted = format(date, "dd/MM/yyyy");
         const today = new Date();
