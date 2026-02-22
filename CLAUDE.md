@@ -454,3 +454,28 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - `ForceStatusDialog` pattern: status select + conditional date picker (only for PAID target), controlled by `forceStatusPayableId` state in orchestrator — same open/close pattern as `PayablePayDialog`
 - Enum casing safety rule: always `.toUpperCase()` on `payable.status` before looking up in `TRANSITIONS` — defensive against pg driver adapter returning mixed-case enum values
 - Actions that share the same cleanup logic can be combined: `if (action === "reopen" || action === "unapprove")` — both clear approval fields when returning to PENDING
+
+### 2026-02-22 — ADR-016: Seletor de Período (Date Range Filter) — CLOSED
+
+**What went well:**
+- Date range picker for the dashboard: 2 calendar pickers (De / Até) + 4 preset buttons (Este Mês, Mês Anterior, Últimos 7 dias, Últimos 30 dias)
+- API switched from `?month=&year=` to `?from=&to=` (ISO date strings) — full flexibility for arbitrary ranges, defaults to current month if omitted
+- `DailyPaymentData.day: number` → `.date: string` — stacked bar chart now works across months (not limited to day 1–31)
+- Period state lives in URL search params (`?from=2026-02-01&to=2026-02-28`) — bookmarkable, shareable, browser back/forward navigates between periods
+- KPIs 1–3 (Total a Pagar, Vencidos, A Vencer 7 dias) stay as live global snapshots — no date filter, always show current reality. Only KPI 4 (Pagos no Período), KPI 5 (planned denominator), and all 3 charts use the date range
+- Active preset detection via simple string comparison of `from`/`to` against computed preset ranges — matching preset gets `variant="default"` Badge highlight
+- Date range validation: picking a `from` after `to` auto-adjusts `to = from` (and vice versa) — prevents invalid ranges
+- Reused existing Popover + Calendar + Badge patterns from `payables-filters.tsx` — zero new UI patterns, zero new dependencies
+- `npx tsc --noEmit` passes with zero errors, 6 files changed (5 modified, 1 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. **`useSearchParams()` requires a `Suspense` boundary in Next.js App Router** — without it, Next.js shows a build warning/error. The page component that renders the client component using `useSearchParams` must wrap it in `<Suspense>`. Added to `dashboard/page.tsx`
+
+**Patterns established:**
+- URL-driven state for dashboard filters: `useSearchParams()` reads `from`/`to`, `router.replace()` updates the URL, `useEffect` re-fetches on change — same pattern usable for any page that needs shareable filter state
+- `getDefaultRange()` helper computes current month boundaries (`YYYY-MM-01` to `YYYY-MM-lastDay`) — reused in both the client component (defaults) and API route (fallbacks)
+- `toISODate(date)` helper formats a `Date` to `YYYY-MM-DD` using local time (manual `getFullYear`/`getMonth`/`getDate`) — avoids the UTC timezone shift from `toISOString()` which can shift the date in negative-offset timezones like Brazil
+- Preset buttons pattern: array of `{ key, label, from, to }` objects computed from `new Date()` — `getPresets()` called on each render so "today"-relative presets are always fresh
+- `formatDateLabel(isoDate)` for chart X-axis: `"2026-02-15"` → `"15/02"` using string splitting (no Date parsing = no timezone risk)
+- `Suspense` boundary rule: any page rendering a client component that uses `useSearchParams()` must wrap it in `<Suspense>` — Next.js App Router requirement
+- `router.replace()` for filter state changes (no extra history entries) — users navigate between periods via presets/pickers, browser back/forward still works for cross-page navigation
