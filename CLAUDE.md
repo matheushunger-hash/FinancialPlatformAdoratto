@@ -343,3 +343,33 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - `EDITABLE_STATUSES` constant (`as const` tuple) shared between API (status guard) and UI (conditional menu item) — single source of truth
 - Sheet with data fetching: `useEffect` triggered by `open + payableId` fetches detail, manages loading/error/data states, resets on close
 - `disabled` prop on combobox: `disabled` on Button + `Popover open={disabled ? false : open}` prevents both visual interaction and programmatic opening
+
+### 2026-02-22 — ADR-013: File Attachments (Upload e Gestão de Anexos) — CLOSED
+
+**What went well:**
+- Full attachment lifecycle: upload (drag-and-drop), download (signed URL), delete (with confirmation) — all scoped by tenant
+- Supabase Storage integration with private bucket — files are never publicly accessible, every download generates a 1-hour signed URL
+- Storage-first delete order prevents orphaned files: delete from Storage, then from DB (if DB delete succeeds but storage fails, you'd have an unreachable file with no reference to find it)
+- Idempotent `scripts/setup-storage.ts` creates the bucket + 3 RLS policies via raw SQL — reproducible setup, no manual Dashboard steps
+- Client-side + server-side validation (defense in depth): MIME type (PDF, PNG, JPG) and file size (5 MB) checked in both `FileUploadZone` and the API route
+- Attachment section lives OUTSIDE the form — attachments are independent CRUD operations, not form state. Upload/delete happen immediately, no "save" needed
+- `fetchPayable` extracted to `useCallback` in `PayableSheet` — reusable by both the `useEffect` (initial load) and `AttachmentSection` (refresh after upload/delete)
+- Zero new dependencies — native HTML5 drag events (`onDragOver`, `onDragLeave`, `onDrop`) + hidden `<input type="file">`, existing shadcn/lucide components
+- `npx tsc --noEmit` passes with zero errors, 9 files changed (6 new, 3 modified), integration test passed all 8 steps (auth → upload → download → verify → delete → verify)
+
+**Mistakes caught — avoid next time:**
+1. **Do NOT set `Content-Type` header manually on `FormData` POST requests** — the browser sets it automatically with the correct multipart boundary string. Setting it manually breaks the boundary and the server can't parse the form data
+2. **Node.js 18+ has native `FormData` and `Blob`** — no need for the `form-data` npm package for test scripts
+
+**Patterns established:**
+- Storage path convention: `{tenantId}/{payableId}/{timestamp}-{sanitized-filename}` — organized by tenant and payable, timestamp prevents name collisions
+- `fileUrl` stores the storage path (NOT a public URL) — signed URLs are generated on demand via `supabase.storage.from("attachments").createSignedUrl(path, 3600)`
+- Tenant ownership check through parent relation: attachment → payable → `tenantId` check. The attachment itself doesn't have `tenantId`, so we verify via its parent payable
+- `DO $$ ... END $$` block with `pg_policies` check for idempotent RLS policy creation — PostgreSQL doesn't have `CREATE POLICY IF NOT EXISTS`
+- Bucket creation via `INSERT INTO storage.buckets ... ON CONFLICT DO NOTHING` — idempotent bucket setup without Dashboard
+- Storage RLS policies scoped by `bucket_id = 'attachments'` — won't affect future buckets. INSERT uses `WITH CHECK`, SELECT/DELETE use `USING`
+- Drag-and-drop zone: native HTML5 events + `cn()` for conditional blue highlight on `dragOver` state — `border-primary bg-primary/5` when active
+- File icon mapping: `application/pdf` → `FileText`, images → `ImageIcon` from Lucide
+- `AlertDialog` inside list items: each attachment row has its own delete confirmation dialog via `AlertDialogTrigger` wrapping the delete button
+- Orchestrator-outside-form pattern: `AttachmentSection` renders below `PayableForm` in the sheet, communicates via `onAttachmentsChange` callback (triggers `fetchPayable` to refresh the whole detail including attachments)
+- Upload overlay: `relative` container with `absolute inset-0 bg-background/80` + spinner during upload — disabled state that still shows the zone underneath
