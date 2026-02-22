@@ -513,3 +513,34 @@ Full session history: `docs/session-log.md`
 - Download trigger pattern: `window.open("/api/export?" + params)` — browser handles the download natively, no Blob/anchor trick needed on the client
 - Filter param reuse: `handleExport()` builds the same `URLSearchParams` as `fetchPayables()` minus pagination — ensures the export always matches what the user sees in the table
 - Duplicating small filter/formatting logic across routes is acceptable when there are only 2 consumers — extract into a shared helper when a 3rd appears
+
+### 2026-02-22 — Issue #39: Dashboard Visual Overhaul — Stripe/Linear Aesthetic — CLOSED
+
+**What went well:**
+- Complete dashboard visual overhaul: Inter font, Stripe purple accent (#635BFF), blue-gray background, dark tooltips, sparklines, delta comparisons
+- Global CSS palette update via OKLCH CSS variables — every shadcn component (buttons, badges, sidebar, calendars) automatically adopted the new purple accent without per-component changes
+- 5 new Prisma queries added to the existing `Promise.all` (15 total) for previous-period deltas and sparkline daily data — zero waterfall, all parallel
+- Sparkline mini-charts (Recharts `AreaChart` with gradient fill) on 3 period-filtered KPI cards add information density without clutter
+- Delta % badges with TrendingUp/TrendingDown icons give instant "better or worse?" context for period-filtered KPIs
+- Donut center label shows total count, eliminating guessing which slice totals what
+- Horizontal bar background tracks create a "progress bar" effect — classic Stripe/Linear pattern
+- Dark navy tooltips (#0A2540) in light mode with automatic fallback to popover colors in dark mode
+- Previous period calculation handles arbitrary ranges correctly (same-length window immediately before selected range)
+- `npx tsc --noEmit` passes with zero errors, 7 files changed (7 modified), 0 new files, 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. **OKLCH CSS variables don't resolve inside SVG `linearGradient` definitions** — Recharts renders gradients in SVG context where `var(--primary)` with OKLCH values may not work. Use hex colors directly for SVG fills/strokes (e.g., `#635BFF` instead of `hsl(var(--primary))`)
+2. **Stacked bar `radius` should only apply to the topmost bar** — applying `radius={[4, 4, 0, 0]}` to every bar in a stack creates visual artifacts at the seams. Only the last (top) bar should have rounded corners
+
+**Patterns established:**
+- Global palette overhaul via CSS variables: change `--primary` in `globals.css` → every shadcn component updates automatically. No need to touch individual component files for color changes
+- `computeDelta(current, previous)` helper: guards against division by zero (`previous === 0 ? (current > 0 ? 100 : 0)`), returns integer percentage
+- `buildSparkline(byDay, rangeStart, rangeEnd)` helper: fills zero values for missing days within a date range, producing a continuous array for the area chart
+- Previous period calculation: `periodMs = rangeEnd - rangeStart`, `prevRangeStart = rangeStart - periodMs - 1 day`, `prevRangeEnd = rangeStart - 1ms` — gives an equivalent-length window immediately before the selected range
+- Sparkline from `findMany` + client-side aggregation: when grouping by a DateTime field (like `paidAt`), use `findMany` with `select` + client-side `Map<dayString, sum>` since Prisma `groupBy` doesn't support date truncation on DateTime fields
+- Sparkline from existing data derivation: `dueInPeriod` sparkline derived from `dailyPayments` data (sum PENDING + APPROVED per day) — no extra query needed when the data already exists in a different shape
+- SVG color rule: use hex colors directly for Recharts fills/strokes/gradients instead of CSS variable references — SVG rendering context may not resolve OKLCH values
+- Shared tooltip class constant (`TOOLTIP_CLASS`): when 3+ tooltip components share the same styling, extract to a constant to avoid drift
+- Dark tooltips pattern: `bg-[#0A2540] text-white` in light mode, `dark:bg-popover dark:text-popover-foreground` in dark mode — Stripe's signature visual element
+- `background` prop on Recharts `<Bar>`: `background={{ fill: "var(--color-muted)", radius: 4 }}` renders a light gray track behind each data bar for progress-bar effect
+- Donut center label: Recharts `<Label content={({ viewBox }) => <text>}/>` inside `<Pie>` — render custom text at the donut center using `viewBox.cx`/`viewBox.cy` coordinates
