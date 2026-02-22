@@ -69,6 +69,7 @@ interface PayablesTableProps {
   onRequestForceStatus: (id: string) => void;
   rowSelection: RowSelectionState;
   onRowSelectionChange: (selection: RowSelectionState) => void;
+  hideSupplierColumns?: boolean;
 }
 
 // --- Helper: Format currency in BRL ---
@@ -109,6 +110,7 @@ function buildColumns(
   onRequestPay: (id: string) => void,
   onEdit: (id: string) => void,
   onRequestForceStatus: (id: string) => void,
+  hideSupplierColumns?: boolean,
 ) {
   return [
     // 0. Checkbox — select row (ADR-011)
@@ -136,28 +138,35 @@ function buildColumns(
       enableSorting: false,
     }),
 
-    // 1. Fornecedor (sortable)
-    columnHelper.accessor("supplierName", {
-      id: "supplierName",
-      header: "Fornecedor",
-      cell: (info) => <span className="font-medium">{info.getValue()}</span>,
-      enableSorting: true,
-    }),
+    // 1–2. Supplier columns — hidden on supplier detail page (ADR-017)
+    ...(hideSupplierColumns
+      ? []
+      : [
+          // 1. Fornecedor (sortable)
+          columnHelper.accessor("supplierName", {
+            id: "supplierName",
+            header: "Fornecedor",
+            cell: (info: { getValue: () => string }) => (
+              <span className="font-medium">{info.getValue()}</span>
+            ),
+            enableSorting: true,
+          }),
 
-    // 2. CNPJ/CPF (not sortable, hidden on mobile)
-    columnHelper.accessor("supplierDocument", {
-      id: "supplierDocument",
-      header: "CNPJ/CPF",
-      cell: (info) => {
-        const row = info.row.original;
-        const formatted =
-          row.supplierDocumentType === "CNPJ"
-            ? formatCNPJ(row.supplierDocument)
-            : formatCPF(row.supplierDocument);
-        return <span className="font-mono text-sm">{formatted}</span>;
-      },
-      enableSorting: false,
-    }),
+          // 2. CNPJ/CPF (not sortable, hidden on mobile)
+          columnHelper.accessor("supplierDocument", {
+            id: "supplierDocument",
+            header: "CNPJ/CPF",
+            cell: (info: { getValue: () => string; row: { original: PayableListItem } }) => {
+              const row = info.row.original;
+              const formatted =
+                row.supplierDocumentType === "CNPJ"
+                  ? formatCNPJ(row.supplierDocument)
+                  : formatCPF(row.supplierDocument);
+              return <span className="font-mono text-sm">{formatted}</span>;
+            },
+            enableSorting: false,
+          }),
+        ]),
 
     // 3. Categoria (not sortable)
     columnHelper.accessor("category", {
@@ -359,10 +368,11 @@ export function PayablesTable({
   onRequestForceStatus,
   rowSelection,
   onRowSelectionChange,
+  hideSupplierColumns,
 }: PayablesTableProps) {
   // Build columns with callbacks — memoize via useMemo would be an option,
   // but since TanStack Table recreates on every render anyway, it's fine here.
-  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit, onRequestForceStatus);
+  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit, onRequestForceStatus, hideSupplierColumns);
 
   // Convert our sort/order props into TanStack's SortingState format
   const sorting: SortingState = [{ id: sort, desc: order === "desc" }];

@@ -521,3 +521,23 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Audit metadata Card pattern: `Card` > `CardHeader` (title + badge) > `CardContent` (avatar sections separated by `Separator`) — reusable for any entity's audit trail
 - `formatDistanceToNow` with `{ addSuffix: true, locale: ptBR }` for Portuguese relative times — "há 3 dias", "há 2 horas"
 - Native `title` attribute for absolute date tooltips — zero-dependency alternative to tooltip components for simple hover info
+
+### 2026-02-22 — Issue #40: Date Range Filter & Timezone Audit — CLOSED
+
+**What went well:**
+- Fixed due date filter returning wrong results — `dueDateTo` was including one extra day because local-time parsing shifted `T23:59:59` into the next day in UTC
+- Full codebase audit (22 Date patterns across `src/`) confirmed only 4 lines were unsafe — the rest already followed the `T12:00:00` or `Z` suffix conventions
+- Fixed `issueDate` and `dueDate` on both create (POST) and edit (PATCH) routes — bare `new Date("yyyy-MM-dd")` was parsing as UTC midnight, potentially shifting dates back one day in UTC-3
+- Dashboard API range boundaries had the same bug — fixed proactively in the same pass
+- 3 commits, 4 files fixed, 0 new dependencies, `npx tsc --noEmit` clean across all commits
+
+**Mistakes caught — avoid next time:**
+1. **`new Date("yyyy-MM-dd")` parses as UTC midnight** — in Brazil (UTC-3), this shifts to the previous day at 21:00. Never use bare date-only strings with `new Date()`. Always append a time component
+2. **`new Date("...T23:59:59")` without `Z` parses as local time** — in UTC-3, local midnight+23:59 becomes next-day 02:59 in UTC. For database range boundaries, always use explicit UTC (`Z` suffix)
+3. **`new Date("...T12:00:00")` without `Z` parses as local noon** — this is SAFE for storage/display because noon stays on the correct calendar day in any timezone up to ±12h. But it's NOT suitable for range boundaries (use `Z` suffix for those)
+
+**Patterns established — the three date rules:**
+- **Display/storage dates** → append `T12:00:00` (noon trick, stays on correct calendar day in any timezone up to ±12h). Used for `issueDate`, `dueDate`, `paidAt` when writing to DB, and for formatting dates in the UI
+- **Range boundaries for queries** → append `T00:00:00.000Z` / `T23:59:59.999Z` (explicit UTC, exact start/end of day). Used for filter `gte`/`lte` conditions and dashboard date range queries
+- **Never bare `new Date("yyyy-MM-dd")`** — always append a time component. The only exception is `new Date()` for "now" (always safe)
+- Codebase audit recipe: `Grep` for `new Date(` patterns → classify each as display/comparison/storage → verify time suffix matches the use case
