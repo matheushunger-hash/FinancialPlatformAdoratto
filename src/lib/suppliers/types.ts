@@ -20,6 +20,16 @@ export interface SupplierListItem {
   updatedAt: string;
 }
 
+export interface SupplierSummary {
+  totalPaid: { value: number; count: number };
+  openPayables: { value: number; count: number };
+  overduePayables: { value: number; count: number };
+}
+
+export interface SupplierDetailResponse extends SupplierListItem {
+  summary?: SupplierSummary;
+}
+
 export interface SuppliersListResponse {
   suppliers: SupplierListItem[];
   total: number;

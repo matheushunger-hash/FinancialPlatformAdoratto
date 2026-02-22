@@ -1,12 +1,14 @@
 "use client";
 
-import { MoreHorizontal, Pencil, Power } from "lucide-react";
+import Link from "next/link";
+import { Eye, MoreHorizontal, Pencil, Power } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -92,7 +94,14 @@ export function SuppliersTable({
           {!loading &&
             suppliers.map((supplier) => (
               <TableRow key={supplier.id}>
-                <TableCell className="font-medium">{supplier.name}</TableCell>
+                <TableCell className="font-medium">
+                  <Link
+                    href={`/dashboard/fornecedores/${supplier.id}`}
+                    className="text-primary hover:underline"
+                  >
+                    {supplier.name}
+                  </Link>
+                </TableCell>
                 <TableCell className="font-mono text-sm">
                   {formatDocument(supplier)}
                 </TableCell>
@@ -113,6 +122,13 @@ export function SuppliersTable({
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      <DropdownMenuItem asChild>
+                        <Link href={`/dashboard/fornecedores/${supplier.id}`}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Ver Detalhes
+                        </Link>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => onEdit(supplier)}>
                         <Pencil className="mr-2 h-4 w-4" />
                         Editar

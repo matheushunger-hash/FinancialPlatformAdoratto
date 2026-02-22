@@ -11,7 +11,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 // =============================================================================
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const ctx = await getAuthContext();
@@ -33,10 +33,66 @@ export async function GET(
       return NextResponse.json({ error: "Fornecedor não encontrado" }, { status: 404 });
     }
 
-    return NextResponse.json({
+    const base = {
       ...supplier,
       createdAt: supplier.createdAt.toISOString(),
       updatedAt: supplier.updatedAt.toISOString(),
+    };
+
+    // Optional KPI summary — only computed when requested
+    const { searchParams } = new URL(request.url);
+    const includeSummary = searchParams.get("include") === "summary";
+
+    if (!includeSummary) {
+      return NextResponse.json(base);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const scope = { supplierId: id, tenantId: ctx.tenantId };
+
+    const [totalPaid, openPayables, overduePayables] = await Promise.all([
+      // Total Pago — all PAID payables for this supplier
+      prisma.payable.aggregate({
+        where: { ...scope, status: "PAID" },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+      // Títulos Abertos — PENDING or APPROVED
+      prisma.payable.aggregate({
+        where: { ...scope, status: { in: ["PENDING", "APPROVED"] } },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+      // Títulos Vencidos — active statuses with dueDate in the past
+      prisma.payable.aggregate({
+        where: {
+          ...scope,
+          status: { in: ["PENDING", "APPROVED"] },
+          dueDate: { lt: today },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+    ]);
+
+    return NextResponse.json({
+      ...base,
+      summary: {
+        totalPaid: {
+          value: Number(totalPaid._sum.payValue ?? 0),
+          count: totalPaid._count,
+        },
+        openPayables: {
+          value: Number(openPayables._sum.payValue ?? 0),
+          count: openPayables._count,
+        },
+        overduePayables: {
+          value: Number(overduePayables._sum.payValue ?? 0),
+          count: overduePayables._count,
+        },
+      },
     });
   } catch (err) {
     console.error("[GET /api/suppliers/[id]] error:", err);

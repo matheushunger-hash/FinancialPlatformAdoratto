@@ -11,6 +11,8 @@ import type { PayablesListResponse } from "@/lib/payables/types";
 // search across description/supplier name/invoice number, and pagination (25/page).
 // =============================================================================
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 // Whitelist of sortable columns → Prisma orderBy mapping
 type PrismaOrder = Record<string, unknown>;
 const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
@@ -90,6 +92,12 @@ export async function GET(request: NextRequest) {
   const methodParam = searchParams.get("paymentMethod") || "";
   if (VALID_METHODS.includes(methodParam)) {
     conditions.push({ paymentMethod: methodParam });
+  }
+
+  // Supplier filter — scope payables to a specific supplier (used by supplier detail page)
+  const supplierIdParam = searchParams.get("supplierId") || "";
+  if (supplierIdParam && UUID_REGEX.test(supplierIdParam)) {
+    conditions.push({ supplierId: supplierIdParam });
   }
 
   // Date range — use explicit UTC (Z suffix) so server timezone doesn't shift boundaries.

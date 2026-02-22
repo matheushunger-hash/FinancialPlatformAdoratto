@@ -44,140 +44,113 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Password reset: `NEW_PASSWORD="..." npm run db:reset-passwords` (uses Supabase Admin API)
 - Tenant backfill: `npm run db:backfill-tenant` (one-time script, already run)
 
+## Project Structure
+When working in this monorepo/project, always confirm the correct working directory before running npm commands. The main project is in the `landing-page` or app-specific subdirectory, not the repo root.
+
+## Dev Server
+Always kill any existing process on port 3000 before starting the dev server with `npm run dev`. Use `lsof -ti:3000 | xargs kill -9 2>/dev/null` first.
+
+## Git Workflow
+After any git merge, rebase, or PR merge, always `git pull` the working branch before running the dev server or making further changes.
+
+## Build & Validation
+This is a TypeScript/Next.js project using Prisma + Supabase. Always ensure zero TypeScript errors before committing. Run `npx tsc --noEmit` to verify.
+
+## Coding Standards
+- After implementing any feature, always guard against undefined/null data in UI components (especially when data comes from async API calls). Never assume API data is present on first render.
+- When implementing features that touch database values (status enums, document types, etc.), always normalize casing. Database values may be mixed-case (`'Paid'`) while code uses uppercase (`'PAID'`) or lowercase. Use `.toUpperCase()` or a normalization layer consistently.
+
+## Feature Implementation Workflow
+Standard workflow for completing an ADR/feature:
+1. Implement all files
+2. Run TypeScript check (`npx tsc --noEmit`)
+3. Test in dev server
+4. Commit and push
+5. Update `CLAUDE.md` (add new rules/patterns to Hard-Won Rules and Established Patterns sections) AND `docs/session-log.md` (full session narrative)
+6. Close GitHub issue
+7. Begin planning next ADR
+
 ---
 
-## Session Log
+## Hard-Won Rules (from past sessions)
 
-### 2026-02-21 — ADR-003: Authentication and Route Protection — CLOSED
+### Prisma / Database
+- `findUnique()` does NOT work with model-level `@@unique` — use `findFirst()` instead
+- `upsert` has the same limitation — use find-then-create/update pattern
+- After `prisma db push`, also run `prisma generate` to update TypeScript types
+- After changing `schema.prisma`, fully restart the dev server — hot reload does NOT pick up Prisma client changes (singleton caches old client)
+- `prisma migrate dev` fails with Supabase-only schemas (`auth`, `storage`) — use `prisma db push` for development
+- Always wrap Prisma operations in try/catch inside API routes — unhandled errors return HTML (not JSON), crashing `res.json()`
+- `prisma db push --accept-data-loss` is needed when replacing unique constraints — verify data is clean first
+- Prisma pg driver adapter may return enum values in mixed casing (`"Paid"` not `"PAID"`) — always `.toUpperCase()` before lookups
+- `tags: { has: "value" }` for filtering by a value inside a `String[]` array column
+- Two-phase migration for adding required columns: Phase 1 (nullable) → backfill → Phase 2 (required)
 
-**What went well:**
-- Full auth flow implemented: login, logout, route protection, user seeding
-- React 19 `useActionState` pattern for progressive enhancement forms
-- Defense-in-depth approach (middleware + layout) for route protection
-- Idempotent seed script that safely handles re-runs
+### Date / Timezone (the three rules)
+- **Display/storage dates** → append `T12:00:00` (noon trick, safe in any timezone ±12h)
+- **Range boundaries for queries** → append `T00:00:00.000Z` / `T23:59:59.999Z` (explicit UTC)
+- **Never bare `new Date("yyyy-MM-dd")`** — always append a time component
+- Always `.split("T")[0]` before appending `T12:00:00` — API returns full ISO strings, never assume `YYYY-MM-DD` format
+- `@db.Date` columns arrive as full ISO strings in JSON despite being date-only in Prisma
 
-**Mistakes caught — avoid next time:**
-1. Prisma 7.x `engineType = "library"` does NOT work — it's silently ignored. Must use driver adapter
-2. `DATABASE_URL` (pooled connection, port 6543) breaks the `pg` driver on Supabase — always use `DIRECT_URL`
-3. The Prisma singleton pattern caches the client across hot reloads — changing `prisma.ts` requires a full server restart (not just hot reload)
-4. Seed script needs the same adapter setup as the app's `prisma.ts` — don't use bare `new PrismaClient()`
-
-**Patterns established:**
-- Server Actions live in `src/lib/auth/actions.ts` (grouped by domain)
-- Login form: Server Component page wrapper + Client Component form
-- Dashboard: layout fetches user profile, passes props to header
-- Logout button uses `<form action={signOut}>` for progressive enhancement
-
-### 2026-02-21 — ADR-004: Base Application Layout — CLOSED
-
-**What went well:**
-- Collapsible sidebar layout using shadcn sidebar components (icon-only mode, mobile drawer)
-- Dark mode via `next-themes` with ThemeProvider bridge pattern
-- Data-driven navigation config (`src/config/navigation.ts`) — add a page by adding one line
-- Clean Server → Client data flow: layout fetches once, passes props down
-
-**Mistakes caught — avoid next time:**
-1. React components (like Lucide icons) cannot be passed as props from Server Components to Client Components — they have methods and aren't serializable. Import them directly inside the Client Component instead.
-2. `globals.css` already had sidebar CSS variables from shadcn init — no manual CSS setup needed
-
-**Patterns established:**
-- App shell: `SidebarProvider` > `AppSidebar` + `SidebarInset` in dashboard layout
-- Navigation config lives in `src/config/navigation.ts` (data-driven UI pattern)
-- Theme: `ThemeProvider` wraps app in root layout, `ThemeToggle` in dashboard header bar
-- `suppressHydrationWarning` on `<html>` is required when using `next-themes` (class-based theming)
-- Active nav link detection: exact match for `/dashboard`, prefix match for sub-pages
-- User info (avatar + dropdown + logout) lives in `NavUser` sidebar footer component
-
-### 2026-02-21 — ADR-005: Supplier CRUD (Fornecedores) — CLOSED
-
-**What went well:**
-- Full supplier CRUD: paginated table with search, side-sheet form, create/edit/soft-delete
-- CNPJ/CPF check-digit validation with proper algorithms (weights, modulo 11)
-- First API Routes in the codebase (`/api/suppliers`, `/api/suppliers/[id]`) with auth on every handler
-- react-hook-form + Zod for complex form (12 fields, 4 sections, cross-field validation)
-- Document uniqueness enforced at both app level (friendly 409 error) and DB level (`@@unique`)
-- Debounced search (300ms) to avoid excessive API calls
-- Soft delete via `active` boolean — deactivation checks for open payables before proceeding
-
-**Mistakes caught — avoid next time:**
-1. Zod 4 uses `error` (not `required_error`) in `z.enum()` options — Zod 3 docs are misleading
-2. `prisma migrate dev` fails when existing migrations reference Supabase-only schemas (`auth`, `storage`) — use `prisma db push` instead for development
-3. Optional string fields in Zod need `.optional().or(z.literal(""))` to accept empty strings from form inputs
-4. `prisma.model.findUnique()` does NOT work with model-level `@@unique([field])` — Prisma only accepts `@id` or field-level `@unique` for `findUnique`. Use `findFirst()` instead for lookups on `@@unique` fields
-5. Always wrap Prisma operations in try/catch inside API routes — unhandled errors cause Next.js to return HTML (not JSON), which crashes the client-side `res.json()` call. Return `{ error: message }` with status 500
-6. After changing `prisma/schema.prisma`, the dev server must be **fully restarted** (kill process + `npm run dev`) — hot reload does NOT pick up Prisma client changes because the singleton caches the old client
-
-**Patterns established:**
-- API Routes authenticate via `createClient()` + `supabase.auth.getUser()` — return 401 if no user
+### Next.js / React
 - API route params are a Promise in Next.js 16 — must `await params` before accessing `id`
-- Validation lives in `src/lib/<domain>/validation.ts`, shared types in `src/lib/<domain>/types.ts`
-- Documents stored as raw digits in DB; formatting (dots/slashes/dashes) is a UI concern
-- Zod `superRefine` for cross-field validation (document validity depends on document type)
-- Orchestrator pattern: one Client Component owns state, passes data/callbacks to "dumb" children
-- Server-side uniqueness errors mapped to form field errors via `form.setError()`
-- Sheet component with `sm:max-w-lg` override for wider forms (default `sm:max-w-sm` is too narrow)
+- React components (Lucide icons, etc.) are NOT serializable as Server→Client props — import inside Client Components
+- `useSearchParams()` requires a `Suspense` boundary in Next.js App Router
+- Do NOT set `Content-Type` header manually on `FormData` POST — browser sets it with correct boundary
+- UI can render before API route is rebuilt — always guard with null checks for new API fields
 
-### 2026-02-21 — ADR-006: Import Suppliers from Spreadsheet — CLOSED
+### Zod / Forms
+- Zod 4 uses `error` (not `required_error`) in `z.enum()` options
+- Optional string fields: `.optional().or(z.literal(""))` to accept empty form strings
+- Don't use `z.array().default([])` with zodResolver — set defaults in `useForm`'s `defaultValues` instead
 
-**What went well:**
-- Bulk import of 228 suppliers from Excel spreadsheet (`planilhabase/*.xlsx`)
-- Handled messy real-world data: scientific notation CNPJs, masked CPFs, missing documents, duplicates
-- Reused existing `isValidCNPJ`/`isValidCPF` validators from `src/lib/suppliers/validation.ts`
-- Script is fully idempotent — second run creates 0 new records
-- Clear summary report with counts for each category (imported, duplicated, invalid, no document)
+---
 
-**Mistakes caught — avoid next time:**
-1. Prisma `upsert` has the same limitation as `findUnique` — it does NOT work with model-level `@@unique` constraints. Use the find-then-create/update pattern instead (same lesson from ADR-005)
-2. Excel stores long numbers (like CNPJs) as floating-point, which causes scientific notation (`7.66492E+13`). Use `{ raw: true }` in SheetJS `sheet_to_json` to preserve the original number, then `Math.round()` + `padStart(14, "0")` to recover the digits
-3. DB unique constraint on `document` means you can't store multiple empty strings. Use unique placeholder values (`PENDENTE-001`, `PENDENTE-002`, etc.) for suppliers without documents
+## Established Patterns
 
-**Patterns established:**
-- One-off scripts live in `scripts/` directory (not `prisma/`) — `prisma/` is reserved for schema/seed
-- Import scripts follow the same DB setup pattern as `prisma/seed.ts` (dotenv, pg Pool, PrismaPg adapter, DIRECT_URL)
-- For no-document imports, use `PENDENTE-NNN` placeholders — clearly identifiable in the UI as needing real documents later
-- npm script naming: `db:import-suppliers` follows the `db:*` convention for database operations
-- Business data files (spreadsheets) go in `/planilhabase/` and are gitignored
+### Architecture
+- **Orchestrator pattern**: one Client Component owns state (fetch, sort, filter, pagination), passes data/callbacks to "dumb" children
+- **Domain file structure**: `src/lib/<domain>/` (validation + types), `src/components/<domain>/` (UI), `src/app/api/<domain>/` (API)
+- **`getAuthContext()`**: returns `{ userId, tenantId, role }` — replaces raw Supabase auth boilerplate in every route
+- **Tenant isolation**: every Prisma `where` clause includes `tenantId: ctx.tenantId`. `userId` is audit-only (in `create` data)
+- **Shared constants**: `STATUS_CONFIG` in `src/lib/payables/types.ts`, `getInitials()` in `src/lib/utils.ts`
 
-### 2026-02-21 — ADR-007: Payable Creation Form (Contas a Pagar) — CLOSED
+### API
+- **`conditions[]` + `AND`**: combine multiple optional filters by pushing conditions, all joined with AND
+- **SORT_MAP whitelist**: `Record<string, (order) => PrismaOrder>` prevents sort injection — unknown values fall back to default
+- **Batch API**: `{ ids[], action }` → per-item validation → returns `{ succeeded[], failed[] }` (not all-or-nothing)
+- **Optional API enrichment**: `?include=summary` keeps default response lean, detail pages request computed data
+- **Transition map**: `TRANSITIONS` object is single source of truth for workflow — both API and UI read from it
+- **Force-status**: separate code path from transitions, ADMIN-only, validates against whitelist
 
-**What went well:**
-- Full payable creation flow: schema evolution, Zod validation, API routes, side-sheet form with 4 sections
-- Clean Prisma schema evolution via `db push` (0 existing rows = safe to change column types)
-- Searchable supplier combobox using shadcn pattern (Popover + Command/cmdk) — fetches all, filters client-side
-- Brazilian currency parsing helper (`parseCurrency`) handles `1.234,56` and `1234,56` and `1234.56`
-- Auto-sync between "valor original" and "valor a pagar" using `useRef` flag — stops when user manually edits
-- Date pickers with `pt-BR` locale, tag toggles with clickable Badge components
-- Orchestrator (`payables-view.tsx`) designed for easy ADR-008 extension — just add table + pagination
+### UI Components
+- **Combobox**: `Popover` + `Command` (cmdk) for searchable dropdowns
+- **Date picker**: `Popover` + `Calendar` with `locale={ptBR}`, store as `yyyy-MM-dd` string
+- **Dual-mode form**: `payable: Detail | null` prop, `key={id ?? "new"}` forces remount on switch
+- **Sheet with data fetching**: `useEffect` on `open + entityId`, loading/error/data states
+- **Currency flow**: string in form → `parseCurrency()` in API → Prisma `Decimal` in DB
+- **CSV export**: client-side `Blob`, UTF-8 BOM (`\uFEFF`), semicolon delimiter (Brazilian Excel)
+- **Recharts dark mode**: `tick={{ fill: "currentColor" }}`, `CartesianGrid className="stroke-border"`
 
-**Mistakes caught — avoid next time:**
-1. After `prisma db push`, you must also run `prisma generate` to update the TypeScript types — otherwise `tsc` still sees the old model fields and every new field/enum shows as "does not exist"
-2. Zod's `z.array(z.string()).default([])` creates an input/output type mismatch with react-hook-form's `zodResolver` — the input type allows `undefined` but the output is always `string[]`, causing a resolver type error. Fix: remove `.default([])` from Zod and set the default in `useForm`'s `defaultValues` instead
+### Storage
+- **Path convention**: `{tenantId}/{payableId}/{timestamp}-{sanitized-filename}`
+- **`fileUrl` stores path, not URL** — signed URLs generated on demand via `createSignedUrl(path, 3600)`
+- **Tenant check via parent**: attachment → payable → `tenantId` verification
 
-**Patterns established:**
-- Combobox pattern: `Popover` + `Command` (cmdk) for searchable dropdowns — width set via `w-[--radix-popover-trigger-width]` to match trigger
-- Currency fields flow: string in form → `parseCurrency()` in API → Prisma `Decimal` in DB
-- Currency formatting on blur: `toLocaleString("pt-BR", { minimumFractionDigits: 2 })` for display
-- Date picker pattern: `Popover` + `Calendar` with `locale={ptBR}`, store as `yyyy-MM-dd` string in form, convert to `Date` in API
-- Auto-sync between related form fields: use `useRef` boolean to track whether user has manually edited the dependent field
-- Tags as clickable `Badge` components toggling values in a `string[]` — no separate DB table needed for fixed options
-- Juros/multa (interest/penalty) is calculated in real-time (`payValue - amount`) and displayed but NOT stored in DB
-- Payable domain files follow the same structure as suppliers: `src/lib/payables/` (validation + types), `src/components/payables/` (UI), `src/app/api/payables/` (API)
+### Scripts
+- One-off scripts live in `scripts/`, `prisma/` is reserved for schema/seed
+- All scripts use the same DB setup: dotenv + pg Pool + PrismaPg adapter + DIRECT_URL
+- npm naming: `db:*` convention for database operations
 
-### 2026-02-21 — ADR-008: Payables Table (Tabela de Títulos a Pagar) — CLOSED
+---
 
-**What went well:**
-- TanStack Table (headless) with 10 columns rendered into shadcn `Table` components — visual consistency with suppliers table
-- Server-side sorting, search (debounced 300ms), and pagination (25 rows/page) via extended API route
-- SORT_MAP whitelist pattern in API — only allowed column names map to Prisma `orderBy`, preventing injection
-- Brazilian formatting throughout: R$ currency (`toLocaleString`), dd/MM/yyyy dates, CNPJ/CPF (`formatCNPJ`/`formatCPF`)
-- Dynamic due date colors: red if overdue, amber if due within 7 days (only for PENDING status)
-- Responsive column hiding: CNPJ/CPF, Juros/Multa, Tags hidden on mobile via `hidden lg:table-cell`
-- Disabled "Editar" and "Baixar" menu items as placeholders for future ADRs
-- Fixed timezone bug in date pickers from ADR-007
+## Completed ADRs
+ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-**Mistakes caught — avoid next time:**
-1. **`new Date("YYYY-MM-DD")` timezone trap**: JavaScript parses date-only strings as UTC midnight. In Brazil (UTC-3), this shifts the date back one day — clicking Feb 20 in the calendar would store/display Feb 19. Fix: always append `T12:00:00` when creating a Date from a stored `yyyy-MM-dd` string (e.g., `new Date(value + "T12:00:00")`). Using noon guarantees the date stays correct in any timezone up to ±12h offset
-2. Don't modify shadcn's `calendar.tsx` `day` cell layout (`w-full h-full aspect-square`) without testing thoroughly — changing flex properties (`flex-1`, removing `aspect-square`) can break the visual grid. The original shadcn defaults work correctly
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs
+
+Full session history: `docs/session-log.md`
 
 **Patterns established:**
 - TanStack Table setup: `manualSorting: true` + `manualPagination: true` for server-side data — TanStack manages UI state only (sort indicators, column rendering)
