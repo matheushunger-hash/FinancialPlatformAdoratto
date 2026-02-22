@@ -373,3 +373,30 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - `AlertDialog` inside list items: each attachment row has its own delete confirmation dialog via `AlertDialogTrigger` wrapping the delete button
 - Orchestrator-outside-form pattern: `AttachmentSection` renders below `PayableForm` in the sheet, communicates via `onAttachmentsChange` callback (triggers `fetchPayable` to refresh the whole detail including attachments)
 - Upload overlay: `relative` container with `absolute inset-0 bg-background/80` + spinner during upload — disabled state that still shows the zone underneath
+
+### 2026-02-22 — ADR-014: KPI Cards do Dashboard — CLOSED
+
+**What went well:**
+- 4 financial KPI cards on the dashboard: Total a Pagar, Vencidos, A Vencer 7 dias, Pagos no Mês
+- API route runs 5 Prisma `aggregate` queries in parallel via `Promise.all` — all database-side, no client-side aggregation
+- "Pagos no Mês" includes `percentOfPlan` calculation (paid ÷ planned × 100) with a 5th query for the denominator
+- Data-driven `CARD_CONFIGS` array maps each KPI to its icon, color, and border — same pattern as `navigation.ts`
+- Skeleton loading state with 4 placeholder cards in the same grid layout — no layout shift when data arrives
+- Color-coded left borders and icons: blue (total), red (overdue), amber (due soon), green (paid)
+- Dark mode support for percentage text (`text-green-600 dark:text-green-400`)
+- Page stays a Server Component — only `KPICards` crosses the client boundary (needs `useState`/`useEffect`)
+- `npx tsc --noEmit` passes with zero errors, 4 files changed (3 new, 1 modified), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this ADR — patterns were well-established from previous ADRs
+
+**Patterns established:**
+- Dashboard aggregation API: `GET /api/dashboard?month=&year=` with `getAuthContext()` for auth + tenant scoping — same pattern as all other API routes
+- `Promise.all` for parallel Prisma aggregations: 5 independent `prisma.payable.aggregate()` calls run concurrently — faster than sequential
+- `activeStatuses` = `["PENDING", "APPROVED"]` as the filter for "still needs to be paid" — excludes `PAID`, `CANCELLED`, `OVERDUE` from totals
+- Date boundaries for aggregations: `today` at midnight for overdue, `today+7` at 23:59:59 for due-soon, `monthStart`/`monthEnd` for monthly totals
+- Percentage calculation with zero-division guard: `plannedSum > 0 ? Math.round((paidSum / plannedSum) * 100) : 0`
+- `formatBRL()` local helper in dashboard component — same logic as payables table but kept local since it's a simple one-liner
+- Card config array pattern: `CARD_CONFIGS: CardConfig[]` with `key`, `icon`, `borderColor`, `iconColor` — data-driven rendering via `.map()`, easy to extend
+- Skeleton cards: same grid layout as real cards (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`) with `Skeleton` components matching the content dimensions
+- Server Component page + Client Component cards: page handles metadata/layout, client component handles data fetching and interactivity
