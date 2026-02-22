@@ -5,6 +5,28 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #50: Delete Payable — CLOSED
+
+**What was built:**
+- `DELETE /api/payables/[id]` endpoint — ADMIN-only, cleans up Supabase Storage files before cascade-deleting the DB record
+- "Excluir" menu item in payables table dropdown — destructive red styling, `Trash2` icon, ADMIN-gated
+- AlertDialog confirmation in both `payables-view.tsx` and `supplier-detail-view.tsx`
+
+**Deviation from plan:**
+- Plan listed 3 files, but `supplier-detail-view.tsx` also uses `PayablesTable` — adding the required `onDelete` prop meant wiring the same state/handler/dialog there too (4 files total)
+
+**Patterns established:**
+- Delete payable pattern: Storage-first cleanup → Prisma cascade delete. Non-blocking on storage failure (orphaned files are less harmful than stuck payables)
+- Destructive menu item recipe: `DropdownMenuSeparator` + `className="text-destructive"` + `Trash2` icon, ADMIN-only guard
+- When adding required props to shared components, check all consumers (Grep for `<ComponentName`) — plan may miss secondary usage sites
+
+**What went well:**
+- Plan-to-implementation was clean — only one gap (missing 4th file) caught during exploration
+- Followed established attachment deletion pattern from `api/attachments/[id]/route.ts`
+- TypeScript passed on first attempt despite 4-file change
+
+---
+
 ### 2026-02-22 — Issue #49: Drilldown Panel Redesign — CLOSED
 
 **What was built:**
