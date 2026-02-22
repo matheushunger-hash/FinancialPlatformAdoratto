@@ -313,6 +313,7 @@ export async function GET(request: NextRequest) {
     const nameMap = new Map(suppliers.map((s) => [s.id, s.name]));
 
     const topSuppliers = topSuppliersRaw.map((row) => ({
+      supplierId: row.supplierId,
       supplierName: nameMap.get(row.supplierId) ?? "Desconhecido",
       total: Number(row._sum.payValue ?? 0),
     }));

@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
   DailyPaymentData,
+  DrillDownFilter,
   StatusDistribution,
   TopSupplier,
 } from "@/lib/dashboard/types";
@@ -220,9 +221,12 @@ interface DashboardChartsProps {
     topSuppliers: TopSupplier[];
   } | null;
   loading: boolean;
+  from?: string;
+  to?: string;
+  onDrillDown?: (filter: DrillDownFilter) => void;
 }
 
-export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
+export function DashboardCharts({ charts, loading, from, to, onDrillDown }: DashboardChartsProps) {
   if (loading || !charts) {
     return <ChartSkeleton />;
   }
@@ -285,6 +289,19 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                         ? [4, 4, 0, 0]
                         : undefined
                     }
+                    cursor={onDrillDown ? "pointer" : undefined}
+                    onClick={(_data, _index, event) => {
+                      if (!onDrillDown) return;
+                      const entry = (_data as unknown as { payload: DailyPaymentData }).payload ?? _data;
+                      const date = (entry as DailyPaymentData).date;
+                      if (!date) return;
+                      onDrillDown({
+                        title: `Pagamentos — ${formatDateLabel(date)} (${STATUS_LABELS[status] ?? status})`,
+                        status,
+                        dueDateFrom: date,
+                        dueDateTo: date,
+                      });
+                    }}
                   />
                 ))}
               </BarChart>
@@ -385,7 +402,7 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                 <BarChart
                   data={charts.topSuppliers}
                   layout="vertical"
-                  margin={{ left: 20 }}
+                  margin={{ left: 60 }}
                 >
                   <CartesianGrid
                     className="stroke-border"
@@ -405,7 +422,7 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                     tick={tickStyle}
                     tickLine={false}
                     axisLine={false}
-                    width={150}
+                    width={200}
                   />
                   <Tooltip content={<CustomSupplierTooltip />} />
                   <Bar
@@ -413,6 +430,19 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                     fill="#635BFF"
                     radius={[0, 4, 4, 0]}
                     background={{ fill: "var(--color-muted)", radius: 4 }}
+                    cursor={onDrillDown ? "pointer" : undefined}
+                    onClick={(_data) => {
+                      if (!onDrillDown || !from || !to) return;
+                      const entry = (_data as unknown as { payload: TopSupplier }).payload ?? _data;
+                      const supplier = entry as TopSupplier;
+                      if (!supplier.supplierId) return;
+                      onDrillDown({
+                        title: supplier.supplierName,
+                        supplierId: supplier.supplierId,
+                        dueDateFrom: from,
+                        dueDateTo: to,
+                      });
+                    }}
                   />
                 </BarChart>
               </ResponsiveContainer>

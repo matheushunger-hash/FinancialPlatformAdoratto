@@ -46,8 +46,18 @@ export interface StatusDistribution {
 
 // One bar in the top-10 horizontal bar chart
 export interface TopSupplier {
+  supplierId: string;
   supplierName: string;
   total: number; // Sum of payValue in R$
+}
+
+// Filter state for drill-down Sheet — built from chart click events
+export interface DrillDownFilter {
+  title: string; // Sheet header, e.g. "Pagamentos — 15/02 (Pendente)"
+  supplierId?: string; // for supplier drill-down
+  status?: string; // for stacked bar drill-down
+  dueDateFrom: string; // ISO date "YYYY-MM-DD"
+  dueDateTo: string; // ISO date "YYYY-MM-DD"
 }
 
 // Full API response — extends KPIs with chart data

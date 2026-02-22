@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KPICards } from "@/components/dashboard/kpi-cards";
 import { DashboardCharts } from "@/components/dashboard/dashboard-charts";
+import { DrillDownSheet } from "@/components/dashboard/drill-down-sheet";
 import { PeriodSelector } from "@/components/dashboard/period-selector";
-import type { DashboardResponse } from "@/lib/dashboard/types";
+import type { DashboardResponse, DrillDownFilter } from "@/lib/dashboard/types";
 
 // =============================================================================
 // DashboardView — Orchestrator (ADR-015 / ADR-016)
@@ -43,6 +44,7 @@ export function DashboardView() {
   const [data, setData] = useState<DashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null);
 
   // Fetch dashboard data whenever the period changes
   const fetchData = useCallback(() => {
@@ -93,7 +95,17 @@ export function DashboardView() {
         error={error}
         keys={["paidThisMonth", "dueInPeriod", "insuredInPeriod"]}
       />
-      <DashboardCharts charts={data?.charts ?? null} loading={loading} />
+      <DashboardCharts
+        charts={data?.charts ?? null}
+        loading={loading}
+        from={from}
+        to={to}
+        onDrillDown={setDrillDown}
+      />
+      <DrillDownSheet
+        filter={drillDown}
+        onOpenChange={(open) => { if (!open) setDrillDown(null); }}
+      />
     </div>
   );
 }
