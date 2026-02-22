@@ -15,7 +15,8 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:import-suppliers": "npx tsx scripts/import-suppliers.ts",
     "db:reset-passwords": "npx tsx scripts/reset-passwords.ts",
-    "db:backfill-tenant": "npx tsx scripts/backfill-tenant.ts"
+    "db:backfill-tenant": "npx tsx scripts/backfill-tenant.ts",
+    "db:setup-storage": "npx tsx scripts/setup-storage.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
