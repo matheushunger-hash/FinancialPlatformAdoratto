@@ -216,6 +216,15 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down)
 
 Full session history: `docs/session-log.md`
+
+**Patterns established:**
+- Recharts `<Bar>` `onClick` handler receives a `BarRectangleItem`, not the raw data — access original data via `(_data as unknown as { payload: T }).payload`
+- Drill-down pattern: `DrillDownFilter` type (title + optional filters + date range) as the "contract" between chart click handlers and the Sheet component
+- Reuse existing list API for drill-down: `GET /api/payables?supplierId=...&status=...&dueDateFrom=...&dueDateTo=...&pageSize=10` — no new endpoint needed
+- Lightweight read-only Sheet table (plain HTML `<table>`) for small preview datasets — TanStack Table is overkill for 10 read-only rows
+- "Ver todos" link pattern: Sheet footer links to the full page (`/contas-a-pagar?filters...`) with pre-applied URL params via `URLSearchParams`
+- Smart column hiding in drill-down: hide the supplier column when drilling into a specific supplier (already in the Sheet title)
+- Orchestrator drill-down state: `useState<DrillDownFilter | null>(null)` — null = closed, non-null = open with those filters
