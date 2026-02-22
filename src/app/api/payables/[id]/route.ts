@@ -37,6 +37,17 @@ export async function GET(
         supplier: {
           select: { name: true, document: true, documentType: true },
         },
+        attachments: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            fileName: true,
+            fileUrl: true,
+            fileSize: true,
+            mimeType: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
@@ -87,6 +98,15 @@ export async function GET(
       paidAt: payable.paidAt?.toISOString() ?? null,
       createdByName: creator?.name ?? "Usuário desconhecido",
       approvedByName: approverName,
+      attachments: payable.attachments.map((a) => ({
+        id: a.id,
+        payableId: payable.id,
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileSize: a.fileSize,
+        mimeType: a.mimeType,
+        createdAt: a.createdAt.toISOString(),
+      })),
     };
 
     return NextResponse.json(detail);
@@ -183,6 +203,17 @@ export async function PATCH(
         supplier: {
           select: { name: true, document: true, documentType: true },
         },
+        attachments: {
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            fileName: true,
+            fileUrl: true,
+            fileSize: true,
+            mimeType: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
@@ -226,6 +257,15 @@ export async function PATCH(
       paidAt: updated.paidAt?.toISOString() ?? null,
       createdByName: creator?.name ?? "Usuário desconhecido",
       approvedByName: approverName,
+      attachments: updated.attachments.map((a) => ({
+        id: a.id,
+        payableId: updated.id,
+        fileName: a.fileName,
+        fileUrl: a.fileUrl,
+        fileSize: a.fileSize,
+        mimeType: a.mimeType,
+        createdAt: a.createdAt.toISOString(),
+      })),
     };
 
     return NextResponse.json(detail);

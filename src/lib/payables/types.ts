@@ -1,6 +1,8 @@
 // Shared types for the Payable feature.
 // Used by both the API routes (server) and the UI components (client).
 
+import type { AttachmentItem } from "@/lib/attachments/types";
+
 export interface PayableListItem {
   id: string;
   supplierId: string;
@@ -49,6 +51,7 @@ export interface PayableDetail extends PayableListItem {
   paidAt: string | null;
   createdByName: string; // Looked up from the users table
   approvedByName: string | null; // Looked up from the users table (if approved)
+  attachments: AttachmentItem[]; // Files attached to this payable (ADR-013)
 }
 
 // Only these statuses allow editing — terminal statuses are locked.
