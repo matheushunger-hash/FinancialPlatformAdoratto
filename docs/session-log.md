@@ -5,6 +5,29 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #49: Drilldown Panel Redesign — CLOSED
+
+**What was built:**
+- Redesigned `drill-down-sheet.tsx` from a cramped HTML table (512px, 10 rows) to a card-based layout (672px, "load more" pagination)
+- Added summary bar with total R$ value, item count with "(X carregados)" indicator, and optional status badge
+- Implemented append-mode pagination: `fetchPayables(pageToFetch, append)` with separate `loading` vs `loadingMore` states
+- Smart primary/secondary text: supplier drilldowns show description (not redundant supplier name)
+- Matching skeleton loading states (5 card skeletons with realistic proportions)
+- Separator before footer for visual separation
+
+**Patterns established:**
+- Card-based drill-down list replaces HTML table — `rounded-lg border bg-card p-3` with two-row layout
+- "Load more" append pattern: separate `loading` (skeleton) vs `loadingMore` (button spinner) states
+- Summary bar in Sheet: `bg-muted/50` container (lighter than a full Card) for aggregate data inside a side panel
+- Flexbox truncation: `min-w-0 flex-1 truncate` for text + `shrink-0` for amounts/badges
+
+**What went well:**
+- Single-file change, zero API modifications — reused existing paginated endpoint
+- TypeScript passed on first attempt
+- Clean approach: wider sheet + card layout + summary bar addressed all 9 issues in the GitHub issue
+
+---
+
 ### 2026-02-21 — ADR-003: Authentication and Route Protection — CLOSED
 
 **What went well:**
