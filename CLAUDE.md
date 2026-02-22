@@ -541,3 +541,27 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - **Range boundaries for queries** → append `T00:00:00.000Z` / `T23:59:59.999Z` (explicit UTC, exact start/end of day). Used for filter `gte`/`lte` conditions and dashboard date range queries
 - **Never bare `new Date("yyyy-MM-dd")`** — always append a time component. The only exception is `new Date()` for "now" (always safe)
 - Codebase audit recipe: `Grep` for `new Date(` patterns → classify each as display/comparison/storage → verify time suffix matches the use case
+
+### 2026-02-22 — ADR-017: Supplier Detail Page (Página de Detalhe do Fornecedor) — CLOSED
+
+**What went well:**
+- Full supplier detail page at `/fornecedores/[id]`: info card, 3 KPI mini-cards, filtered payables table — all reusing existing components
+- Backward-compatible API extension: `GET /api/suppliers/[id]?include=summary` runs 3 parallel `aggregate` queries (Total Pago, Abertos, Vencidos) — without `?include=summary`, response is unchanged
+- `supplierId` filter added to `GET /api/payables` using the existing `conditions[] + AND` pattern — composes naturally with all other filters
+- `hideSupplierColumns` prop on `PayablesTable` uses conditional spread in `buildColumns()` to exclude supplier name + CNPJ columns — existing callers unaffected
+- Dual-fetch orchestrator (`SupplierDetailView`): supplier+summary fetch and payables fetch are independent, but payable transitions re-run BOTH fetches so KPIs stay in sync
+- Clickable supplier names in the suppliers table (Next.js `Link` with prefetch) + "Ver Detalhes" dropdown item for discoverability
+- `npx tsc --noEmit` passes with zero errors, 9 files changed (5 modified, 4 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. **Conditional spread in column arrays needs explicit type annotations** — when using `...(condition ? [] : [columnHelper.accessor(...)])`, TypeScript can't infer the cell render function types as cleanly as direct array items. Adding explicit type annotations on `info` params (e.g., `info: { getValue: () => string }`) resolves this
+
+**Patterns established:**
+- Optional API enrichment via query param: `?include=summary` pattern keeps the default response lean while allowing detail pages to request computed data — avoids a separate endpoint
+- `Promise.all` for parallel aggregations scoped to a single entity: `{ supplierId: id, tenantId: ctx.tenantId }` reused across all 3 queries via a `scope` variable
+- Dual-fetch orchestrator: two independent `useCallback` + `useEffect` pairs, with transition handlers calling both `fetchPayables()` and `fetchSupplier()` to keep KPIs in sync
+- `hideSupplierColumns` conditional column pattern: `...(flag ? [] : [column1, column2])` inside the columns array — clean way to exclude columns without branching logic
+- `InfoRow` presentational helper: icon + label + value, returns `null` when value is empty — used to render optional supplier fields without blank rows
+- Supplier detail page recipe (9-file change): types → API enrichment → payables filter → table prop → info card → KPI cards → orchestrator → page → table links
+- `DropdownMenuItem asChild` + `Link` for navigation items in dropdown menus — enables client-side navigation with prefetch inside Radix dropdowns
+- UUID validation in Server Component pages: `UUID_REGEX.test(id)` → `notFound()` gives a clean 404 for malformed IDs before any DB queries run
