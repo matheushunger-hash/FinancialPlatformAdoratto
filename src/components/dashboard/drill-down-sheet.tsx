@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -12,18 +12,22 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STATUS_CONFIG } from "@/lib/payables/types";
 import type { PayableListItem, PayablesListResponse } from "@/lib/payables/types";
 import type { DrillDownFilter } from "@/lib/dashboard/types";
 
 // =============================================================================
-// DrillDownSheet — Displays filtered payables for a chart click (#47)
+// DrillDownSheet — Displays filtered payables for a chart click (#47, #49)
 // =============================================================================
-// Opens when the user clicks a bar in the dashboard charts. Shows up to 10
-// matching payables in a lightweight read-only table, with a "Ver todos" link
-// to navigate to the full payables page with pre-applied filters.
+// Opens when the user clicks a bar in the dashboard charts. Shows payables in
+// a card-based layout with a summary bar, "load more" pagination, and a
+// "Ver todos" link to navigate to the full payables page.
 // =============================================================================
+
+const PAGE_SIZE = 15;
 
 function formatBRL(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -53,62 +57,93 @@ interface DrillDownSheetProps {
 export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
   const [payables, setPayables] = useState<PayableListItem[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPayables = useCallback(async () => {
-    if (!filter) return;
-    setLoading(true);
-    setError(null);
+  // Derived state
+  const hasMore = payables.length < total;
+  const totalValue = payables.reduce((sum, p) => sum + Number(p.payValue), 0);
 
-    const params = new URLSearchParams();
-    if (filter.supplierId) params.set("supplierId", filter.supplierId);
-    if (filter.status) params.set("status", filter.status);
-    params.set("dueDateFrom", filter.dueDateFrom);
-    params.set("dueDateTo", filter.dueDateTo);
-    params.set("pageSize", "10");
-    params.set("sort", "dueDate");
-    params.set("order", "asc");
+  const fetchPayables = useCallback(
+    async (pageToFetch: number, append: boolean) => {
+      if (!filter) return;
 
-    try {
-      const res = await fetch(`/api/payables?${params.toString()}`);
-      if (!res.ok) throw new Error("Falha ao carregar títulos");
-      const data: PayablesListResponse = await res.json();
-      setPayables(data.payables);
-      setTotal(data.total);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao carregar títulos");
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      const params = new URLSearchParams();
+      if (filter.supplierId) params.set("supplierId", filter.supplierId);
+      if (filter.status) params.set("status", filter.status);
+      params.set("dueDateFrom", filter.dueDateFrom);
+      params.set("dueDateTo", filter.dueDateTo);
+      params.set("page", String(pageToFetch));
+      params.set("pageSize", String(PAGE_SIZE));
+      params.set("sort", "dueDate");
+      params.set("order", "asc");
+
+      try {
+        const res = await fetch(`/api/payables?${params.toString()}`);
+        if (!res.ok) throw new Error("Falha ao carregar títulos");
+        const data: PayablesListResponse = await res.json();
+
+        if (append) {
+          setPayables((prev) => [...prev, ...data.payables]);
+        } else {
+          setPayables(data.payables);
+        }
+        setTotal(data.total);
+        setPage(pageToFetch);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Erro ao carregar títulos");
+      } finally {
+        if (append) {
+          setLoadingMore(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [filter],
+  );
 
   useEffect(() => {
     if (!filter) {
       setPayables([]);
       setTotal(0);
+      setPage(1);
       setError(null);
       return;
     }
-    fetchPayables();
+    fetchPayables(1, false);
   }, [filter, fetchPayables]);
+
+  function handleLoadMore() {
+    fetchPayables(page + 1, true);
+  }
 
   const isOpen = filter !== null;
   const isSupplierDrillDown = !!filter?.supplierId;
+  const statusCfg = filter?.status ? STATUS_CONFIG[filter.status.toUpperCase()] : null;
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-lg overflow-y-auto">
+      <SheetContent className="sm:max-w-2xl overflow-y-auto">
         <SheetHeader>
           <SheetTitle>{filter?.title ?? "Detalhamento"}</SheetTitle>
           <SheetDescription>
-            {loading
-              ? "Carregando..."
-              : `${total} título${total !== 1 ? "s" : ""} encontrado${total !== 1 ? "s" : ""}`}
+            {filter
+              ? `${formatDate(filter.dueDateFrom)} – ${formatDate(filter.dueDateTo)}`
+              : "Carregando..."}
           </SheetDescription>
         </SheetHeader>
 
-        <div className="px-4 pb-4">
+        <div className="px-4 pb-4 space-y-4">
           {/* Error state */}
           {error && (
             <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
@@ -116,13 +151,44 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
             </div>
           )}
 
-          {/* Loading state */}
+          {/* Summary bar — shows total value and count */}
+          {!loading && !error && payables.length > 0 && (
+            <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
+              <div>
+                <p className="text-2xl font-semibold tabular-nums">
+                  {formatBRL(totalValue)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {total} título{total !== 1 ? "s" : ""} encontrado{total !== 1 ? "s" : ""}
+                  {payables.length < total && (
+                    <span> ({payables.length} carregados)</span>
+                  )}
+                </p>
+              </div>
+              {statusCfg && (
+                <Badge variant={statusCfg.variant} className="text-sm">
+                  {statusCfg.label}
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* Loading skeleton */}
           {loading && (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <Skeleton className="h-4 w-32" />
-                  <Skeleton className="h-4 w-20 ml-auto" />
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="rounded-lg border p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-5 w-40" />
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-5 w-24" />
+                      <Skeleton className="h-5 w-16 rounded-full" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
                 </div>
               ))}
             </div>
@@ -135,63 +201,90 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
             </p>
           )}
 
-          {/* Data table */}
+          {/* Card list */}
           {!loading && !error && payables.length > 0 && (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-muted-foreground">
-                  {!isSupplierDrillDown && (
-                    <th className="pb-2 font-medium">Fornecedor</th>
-                  )}
-                  <th className="pb-2 font-medium">Descrição</th>
-                  <th className="pb-2 font-medium">Vencimento</th>
-                  <th className="pb-2 text-right font-medium">Valor</th>
-                  <th className="pb-2 text-right font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {payables.map((p) => {
-                  const cfg = STATUS_CONFIG[p.status.toUpperCase()];
-                  return (
-                    <tr key={p.id} className="border-b last:border-0">
-                      {!isSupplierDrillDown && (
-                        <td className="py-2.5 pr-2 max-w-[140px] truncate" title={p.supplierName}>
-                          {p.supplierName}
-                        </td>
-                      )}
-                      <td className="py-2.5 pr-2 max-w-[160px] truncate" title={p.description}>
-                        {p.description}
-                      </td>
-                      <td className="py-2.5 pr-2 whitespace-nowrap">
-                        {formatDate(p.dueDate)}
-                      </td>
-                      <td className="py-2.5 pr-2 text-right tabular-nums whitespace-nowrap">
+            <div className="space-y-2">
+              {payables.map((p) => {
+                const cfg = STATUS_CONFIG[p.status.toUpperCase()];
+                // For supplier drilldowns, show description as the primary text
+                // (supplier name is already in the Sheet title)
+                const primaryText = isSupplierDrillDown
+                  ? p.description
+                  : p.supplierName;
+                // Secondary text: show description unless it matches the primary
+                const secondaryText =
+                  !isSupplierDrillDown && p.description !== p.supplierName
+                    ? p.description
+                    : null;
+
+                return (
+                  <div
+                    key={p.id}
+                    className="rounded-lg border bg-card p-3 transition-colors hover:bg-accent/50"
+                  >
+                    {/* Top row: name/description + amount + status badge */}
+                    <div className="flex items-center gap-3">
+                      <span className="min-w-0 flex-1 truncate font-medium" title={primaryText}>
+                        {primaryText}
+                      </span>
+                      <span className="shrink-0 text-base font-semibold tabular-nums">
                         {formatBRL(Number(p.payValue))}
-                      </td>
-                      <td className="py-2.5 text-right">
-                        <Badge variant={cfg?.variant ?? "outline"}>
-                          {cfg?.label ?? p.status}
-                        </Badge>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </span>
+                      <Badge variant={cfg?.variant ?? "outline"} className="shrink-0">
+                        {cfg?.label ?? p.status}
+                      </Badge>
+                    </div>
+                    {/* Bottom row: secondary text + due date */}
+                    <div className="mt-1 flex items-center gap-3">
+                      <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+                        {secondaryText ?? "\u00A0"}
+                      </span>
+                      <span className="shrink-0 text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDate(p.dueDate)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Load more button */}
+              {hasMore && (
+                <div className="flex justify-center pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Carregando...
+                      </>
+                    ) : (
+                      `Carregar mais (${payables.length} de ${total})`
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
         {/* Footer with "Ver todos" link */}
         {!loading && !error && filter && total > 0 && (
-          <SheetFooter className="px-4 pb-4">
-            <Link
-              href={buildPayablesUrl(filter)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-            >
-              Ver todos na tabela completa
-              <ExternalLink className="h-3.5 w-3.5" />
-            </Link>
-          </SheetFooter>
+          <>
+            <Separator />
+            <SheetFooter className="px-4 py-4">
+              <Link
+                href={buildPayablesUrl(filter)}
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+              >
+                Ver todos na tabela completa
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            </SheetFooter>
+          </>
         )}
       </SheetContent>
     </Sheet>
