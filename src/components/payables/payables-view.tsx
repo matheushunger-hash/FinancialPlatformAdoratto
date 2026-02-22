@@ -62,6 +62,9 @@ export function PayablesView({ userRole }: PayablesViewProps) {
   // Force-status dialog state — stores the payable ID for admin override
   const [forceStatusPayableId, setForceStatusPayableId] = useState<string | null>(null);
 
+  // Delete confirmation state — stores the payable ID pending deletion (#50)
+  const [deletingPayableId, setDeletingPayableId] = useState<string | null>(null);
+
   // Row selection state for batch actions (ADR-011)
   // TanStack format: { "0": true, "2": true } where keys are row indices
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -228,6 +231,27 @@ export function PayablesView({ userRole }: PayablesViewProps) {
     }
   }
 
+  // Delete handler — calls DELETE /api/payables/:id (#50)
+  async function handleDelete() {
+    if (!deletingPayableId) return;
+    try {
+      const res = await fetch(`/api/payables/${deletingPayableId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erro ao excluir título");
+      }
+      toast.success("Título excluído com sucesso");
+      setDeletingPayableId(null);
+      fetchPayables();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao excluir título",
+      );
+    }
+  }
+
   // Get the current status of the payable being force-changed (for the dialog)
   const forceStatusCurrentStatus = forceStatusPayableId
     ? payables.find((p) => p.id === forceStatusPayableId)?.status ?? ""
@@ -347,6 +371,7 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         onRequestPay={(id) => setPayingPayableId(id)}
         onEdit={handleEdit}
         onRequestForceStatus={(id) => setForceStatusPayableId(id)}
+        onDelete={(id) => setDeletingPayableId(id)}
         rowSelection={rowSelection}
         onRowSelectionChange={setRowSelection}
       />
@@ -460,6 +485,33 @@ export function PayablesView({ userRole }: PayablesViewProps) {
           setBatchAction(null);
         }}
       />
+
+      {/* Delete confirmation dialog (#50) */}
+      <AlertDialog
+        open={deletingPayableId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingPayableId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir título</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este título? Esta ação não pode ser
+              desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

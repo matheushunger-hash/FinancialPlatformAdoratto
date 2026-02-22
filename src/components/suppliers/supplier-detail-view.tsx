@@ -73,6 +73,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
   const [editingPayableId, setEditingPayableId] = useState<string | null>(null);
   const [payingPayableId, setPayingPayableId] = useState<string | null>(null);
   const [forceStatusPayableId, setForceStatusPayableId] = useState<string | null>(null);
+  const [deletingPayableId, setDeletingPayableId] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [batchAction, setBatchAction] = useState<"approve" | "pay" | null>(null);
   const [sort, setSort] = useState("dueDate");
@@ -234,6 +235,27 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
     }
   }
 
+  async function handleDelete() {
+    if (!deletingPayableId) return;
+    try {
+      const res = await fetch(`/api/payables/${deletingPayableId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erro ao excluir título");
+      }
+      toast.success("Título excluído com sucesso");
+      setDeletingPayableId(null);
+      fetchPayables();
+      fetchSupplier(); // KPIs may change after deletion
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao excluir título",
+      );
+    }
+  }
+
   const forceStatusCurrentStatus = forceStatusPayableId
     ? payables.find((p) => p.id === forceStatusPayableId)?.status ?? ""
     : "";
@@ -343,6 +365,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
           onRequestPay={(id) => setPayingPayableId(id)}
           onEdit={handleEdit}
           onRequestForceStatus={(id) => setForceStatusPayableId(id)}
+          onDelete={(id) => setDeletingPayableId(id)}
           rowSelection={rowSelection}
           onRowSelectionChange={setRowSelection}
           hideSupplierColumns
@@ -466,6 +489,33 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
           setBatchAction(null);
         }}
       />
+
+      {/* Delete confirmation dialog (#50) */}
+      <AlertDialog
+        open={deletingPayableId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingPayableId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir título</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este título? Esta ação não pode ser
+              desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={handleDelete}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

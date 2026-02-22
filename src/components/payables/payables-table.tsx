@@ -19,6 +19,7 @@ import {
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  Trash2,
   Undo2,
   XCircle,
 } from "lucide-react";
@@ -67,6 +68,7 @@ interface PayablesTableProps {
   onRequestPay: (id: string) => void;
   onEdit: (id: string) => void;
   onRequestForceStatus: (id: string) => void;
+  onDelete: (id: string) => void;
   rowSelection: RowSelectionState;
   onRowSelectionChange: (selection: RowSelectionState) => void;
   hideSupplierColumns?: boolean;
@@ -110,6 +112,7 @@ function buildColumns(
   onRequestPay: (id: string) => void,
   onEdit: (id: string) => void,
   onRequestForceStatus: (id: string) => void,
+  onDelete: (id: string) => void,
   hideSupplierColumns?: boolean,
 ) {
   return [
@@ -333,6 +336,14 @@ function buildColumns(
                     <ArrowRightLeft className="mr-2 h-4 w-4" />
                     Alterar Status
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => onDelete(payable.id)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Excluir
+                  </DropdownMenuItem>
                 </>
               )}
               {!canEdit && actions.length === 0 && userRole !== "ADMIN" && (
@@ -366,13 +377,14 @@ export function PayablesTable({
   onRequestPay,
   onEdit,
   onRequestForceStatus,
+  onDelete,
   rowSelection,
   onRowSelectionChange,
   hideSupplierColumns,
 }: PayablesTableProps) {
   // Build columns with callbacks — memoize via useMemo would be an option,
   // but since TanStack Table recreates on every render anyway, it's fine here.
-  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit, onRequestForceStatus, hideSupplierColumns);
+  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit, onRequestForceStatus, onDelete, hideSupplierColumns);
 
   // Convert our sort/order props into TanStack's SortingState format
   const sorting: SortingState = [{ id: sort, desc: order === "desc" }];

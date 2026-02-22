@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
+import { createClient } from "@/lib/supabase/server";
 import { payableFormSchema, parseCurrency } from "@/lib/payables/validation";
 import { EDITABLE_STATUSES } from "@/lib/payables/types";
 import type { PayableDetail } from "@/lib/payables/types";
@@ -271,6 +272,78 @@ export async function PATCH(
     return NextResponse.json(detail);
   } catch (err) {
     console.error("[PATCH /api/payables/[id]] error:", err);
+    const message =
+      err instanceof Error ? err.message : "Erro interno do servidor";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// =============================================================================
+// DELETE /api/payables/[id] — Permanently delete a payable (ADMIN only)
+// =============================================================================
+// Deletes Storage files first, then the DB record. Prisma cascade handles
+// attachment DB rows automatically (onDelete: Cascade in schema).
+// =============================================================================
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const ctx = await getAuthContext();
+  if (!ctx) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (ctx.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+
+  if (!UUID_REGEX.test(id)) {
+    return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
+  }
+
+  try {
+    // Verify the payable exists and belongs to this tenant
+    const payable = await prisma.payable.findFirst({
+      where: { id, tenantId: ctx.tenantId },
+    });
+
+    if (!payable) {
+      return NextResponse.json(
+        { error: "Título não encontrado" },
+        { status: 404 },
+      );
+    }
+
+    // Fetch attachment file paths for storage cleanup
+    const attachments = await prisma.attachment.findMany({
+      where: { payableId: id },
+      select: { fileUrl: true },
+    });
+
+    // Step 1: Delete files from Supabase Storage (if any)
+    if (attachments.length > 0) {
+      const filePaths = attachments.map((a) => a.fileUrl);
+      const supabase = await createClient();
+      const { error: storageError } = await supabase.storage
+        .from("attachments")
+        .remove(filePaths);
+
+      if (storageError) {
+        console.error("[DELETE /api/payables/[id]] Storage error:", storageError);
+        // Continue with DB delete — orphaned storage files are less harmful
+        // than leaving a payable the user explicitly asked to delete
+      }
+    }
+
+    // Step 2: Delete the payable (cascade deletes attachment DB records)
+    await prisma.payable.delete({ where: { id } });
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("[DELETE /api/payables/[id]] error:", err);
     const message =
       err instanceof Error ? err.message : "Erro interno do servidor";
     return NextResponse.json({ error: message }, { status: 500 });
