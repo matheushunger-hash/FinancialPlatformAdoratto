@@ -182,7 +182,7 @@ function buildColumns(
       header: "Vencimento",
       cell: (info) => {
         const dateStr = info.getValue();
-        const date = new Date(dateStr);
+        const date = new Date(dateStr + "T12:00:00");
         const formatted = format(date, "dd/MM/yyyy");
         const today = new Date();
         today.setHours(0, 0, 0, 0);
