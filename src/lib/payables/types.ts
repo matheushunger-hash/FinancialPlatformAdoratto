@@ -57,6 +57,16 @@ export interface PayableDetail extends PayableListItem {
 // Only these statuses allow editing — terminal statuses are locked.
 export const EDITABLE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 
+// Status → display label + badge variant, shared across table and form components.
+export const STATUS_CONFIG: Record<string, { label: string; variant: "outline" | "default" | "destructive" | "secondary" }> = {
+  PENDING: { label: "Pendente", variant: "outline" },
+  APPROVED: { label: "Aprovado", variant: "default" },
+  REJECTED: { label: "Rejeitado", variant: "destructive" },
+  PAID: { label: "Pago", variant: "default" },
+  OVERDUE: { label: "Vencido", variant: "destructive" },
+  CANCELLED: { label: "Cancelado", variant: "secondary" },
+};
+
 // Will be used by ADR-008 (table), defined now for the API response
 export interface PayablesListResponse {
   payables: PayableListItem[];
