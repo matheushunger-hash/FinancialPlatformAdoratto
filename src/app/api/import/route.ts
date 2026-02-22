@@ -226,12 +226,8 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Validate description
-      const description = String(rawDescription || "").trim();
-      if (!description) {
-        errors.push({ row: rowNum, reason: "Descrição vazia" });
-        continue;
-      }
+      // Description falls back to supplier name when not mapped or empty
+      const description = String(rawDescription || "").trim() || supplierName;
 
       // Parse and validate amount
       const amountStr = String(rawAmount || "").trim();

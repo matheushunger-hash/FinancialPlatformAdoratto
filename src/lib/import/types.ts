@@ -11,7 +11,7 @@
 export const TARGET_FIELDS = [
   { key: "supplierName", label: "Fornecedor", required: true },
   { key: "document", label: "CNPJ/CPF", required: false },
-  { key: "description", label: "Descrição", required: true },
+  { key: "description", label: "Descrição", required: false },
   { key: "amount", label: "Valor Original", required: true },
   { key: "dueDate", label: "Data de Vencimento", required: true },
   { key: "issueDate", label: "Data de Emissão", required: false },

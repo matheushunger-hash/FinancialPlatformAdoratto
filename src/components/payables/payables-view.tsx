@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Search } from "lucide-react";
+import { Download, Plus, Search } from "lucide-react";
 import type { RowSelectionState } from "@tanstack/react-table";
 import {
   AlertDialog,
@@ -156,6 +156,18 @@ export function PayablesView({ userRole }: PayablesViewProps) {
     setPage(1); // Reset to page 1 when filters change
   }
 
+  function handleExport() {
+    const params = new URLSearchParams({ sort, order });
+    if (debouncedSearch) params.set("search", debouncedSearch);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.tag) params.set("tag", filters.tag);
+    if (filters.category) params.set("category", filters.category);
+    if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
+    if (filters.dueDateFrom) params.set("dueDateFrom", filters.dueDateFrom);
+    if (filters.dueDateTo) params.set("dueDateTo", filters.dueDateTo);
+    window.open("/api/export?" + params.toString());
+  }
+
   function handleSortChange(columnId: string) {
     if (columnId === sort) {
       // Same column — toggle direction
@@ -305,10 +317,16 @@ export function PayablesView({ userRole }: PayablesViewProps) {
             className="pl-9"
           />
         </div>
-        <Button onClick={handleNew}>
-          <Plus className="mr-2 h-4 w-4" />
-          Novo Título
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="mr-2 h-4 w-4" />
+            Exportar{total > 0 ? ` (${total})` : ""}
+          </Button>
+          <Button onClick={handleNew}>
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Título
+          </Button>
+        </div>
       </div>
 
       {/* Filters: quick pills + advanced dropdowns + date range */}
