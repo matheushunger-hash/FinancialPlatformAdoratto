@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/table";
 import { formatCNPJ, formatCPF } from "@/lib/suppliers/validation";
 import { getAvailableActions } from "@/lib/payables/transitions";
-import { EDITABLE_STATUSES, type PayableListItem } from "@/lib/payables/types";
+import { EDITABLE_STATUSES, STATUS_CONFIG, type PayableListItem } from "@/lib/payables/types";
 
 // =============================================================================
 // PayablesTable — TanStack Table rendering payables with shadcn UI
@@ -77,16 +77,6 @@ function formatBRL(value: string): string {
   if (isNaN(num)) return value;
   return `R$ ${num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-
-// --- Helper: Status badge configuration ---
-const STATUS_CONFIG: Record<string, { label: string; variant: "outline" | "default" | "destructive" | "secondary" }> = {
-  PENDING: { label: "Pendente", variant: "outline" },
-  APPROVED: { label: "Aprovado", variant: "default" },
-  REJECTED: { label: "Rejeitado", variant: "destructive" },
-  PAID: { label: "Pago", variant: "default" },
-  OVERDUE: { label: "Vencido", variant: "destructive" },
-  CANCELLED: { label: "Cancelado", variant: "secondary" },
-};
 
 // --- Helper: Tag value → display label ---
 const TAG_LABELS: Record<string, string> = {

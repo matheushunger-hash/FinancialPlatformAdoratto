@@ -4,15 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Loader2 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   Popover,
   PopoverContent,
@@ -39,7 +42,7 @@ import {
   type PayableFormData,
 } from "@/lib/payables/validation";
 import { SupplierCombobox } from "@/components/payables/supplier-combobox";
-import type { PayableDetail } from "@/lib/payables/types";
+import { STATUS_CONFIG, type PayableDetail } from "@/lib/payables/types";
 
 // =============================================================================
 // PayableForm — Create or edit a payable (título a pagar)
@@ -214,48 +217,75 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
         {/* ============================================================= */}
         {/* Section 0: Metadata (edit mode only)                           */}
         {/* ============================================================= */}
-        {isEditing && (
-          <div className="rounded-md bg-muted p-3 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Criado por</span>
-              <span>{payable.createdByName}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Criado em</span>
-              <span>
-                {format(new Date(payable.createdAt), "dd/MM/yyyy", {
-                  locale: ptBR,
-                })}
-              </span>
-            </div>
-            {payable.approvedByName && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Aprovado por</span>
-                <span>{payable.approvedByName}</span>
-              </div>
-            )}
-            {payable.approvedAt && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Aprovado em</span>
-                <span>
-                  {format(new Date(payable.approvedAt), "dd/MM/yyyy", {
-                    locale: ptBR,
-                  })}
-                </span>
-              </div>
-            )}
-            {payable.paidAt && (
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Pago em</span>
-                <span>
-                  {format(new Date(payable.paidAt), "dd/MM/yyyy", {
-                    locale: ptBR,
-                  })}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+        {isEditing && (() => {
+          const statusCfg = STATUS_CONFIG[payable.status] ?? { label: payable.status, variant: "outline" as const };
+          return (
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+                <CardTitle className="text-sm font-medium">Auditoria</CardTitle>
+                <Badge variant={statusCfg.variant}>{statusCfg.label}</Badge>
+              </CardHeader>
+              <CardContent className="space-y-3 px-4 pb-4 pt-2">
+                {/* --- Criação --- */}
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs">{getInitials(payable.createdByName)}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col text-sm leading-tight">
+                    <span className="font-medium">{payable.createdByName}</span>
+                    <span
+                      className="text-xs text-muted-foreground"
+                      title={format(new Date(payable.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    >
+                      Criado {formatDistanceToNow(new Date(payable.createdAt), { addSuffix: true, locale: ptBR })}
+                    </span>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* --- Aprovação --- */}
+                {payable.approvedByName ? (
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarFallback className="text-xs">{getInitials(payable.approvedByName)}</AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col text-sm leading-tight">
+                      <span className="font-medium">{payable.approvedByName}</span>
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title={payable.approvedAt ? format(new Date(payable.approvedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) : undefined}
+                      >
+                        Aprovado {payable.approvedAt ? formatDistanceToNow(new Date(payable.approvedAt), { addSuffix: true, locale: ptBR }) : ""}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-muted-foreground">Aprovação pendente</p>
+                )}
+
+                <Separator />
+
+                {/* --- Pagamento --- */}
+                {payable.paidAt ? (
+                  <div className="flex flex-col text-sm leading-tight">
+                    <span className="font-medium">
+                      Pago em {format(new Date(payable.paidAt), "dd/MM/yyyy", { locale: ptBR })}
+                    </span>
+                    <span
+                      className="text-xs text-muted-foreground"
+                      title={format(new Date(payable.paidAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                    >
+                      {formatDistanceToNow(new Date(payable.paidAt), { addSuffix: true, locale: ptBR })}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-sm italic text-muted-foreground">Aguardando pagamento</p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* ============================================================= */}
         {/* Section 1: Dados Principais                                    */}
