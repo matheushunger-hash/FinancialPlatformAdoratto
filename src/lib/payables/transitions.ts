@@ -7,7 +7,7 @@
 // =============================================================================
 
 export interface StatusTransition {
-  action: string; // "approve" | "reject" | "pay" | "reopen"
+  action: string; // "approve" | "reject" | "pay" | "reopen" | "reverse" | "cancel"
   label: string; // Portuguese label for button text
   to: string; // Target status
   requiredRoles: string[]; // Roles allowed to perform this action
@@ -50,7 +50,21 @@ export const TRANSITIONS: Record<string, StatusTransition[]> = {
       requiredRoles: ["ADMIN"],
     },
   ],
-  // PAID, OVERDUE, CANCELLED — terminal statuses, no outgoing transitions
+  PAID: [
+    {
+      action: "reverse",
+      label: "Estornar Pagamento",
+      to: "PENDING",
+      requiredRoles: ["ADMIN"],
+    },
+    {
+      action: "cancel",
+      label: "Cancelar",
+      to: "CANCELLED",
+      requiredRoles: ["ADMIN"],
+    },
+  ],
+  // OVERDUE, CANCELLED — terminal statuses, no outgoing transitions
 };
 
 /**

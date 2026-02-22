@@ -15,7 +15,7 @@ import type { BatchTransitionResponse } from "@/lib/payables/types";
 // =============================================================================
 
 // Known actions — used for early validation before looping
-const VALID_ACTIONS = new Set(["approve", "reject", "pay", "reopen"]);
+const VALID_ACTIONS = new Set(["approve", "reject", "pay", "reopen", "reverse", "cancel"]);
 
 export async function POST(request: NextRequest) {
   // 1. Auth check
@@ -115,6 +115,14 @@ export async function POST(request: NextRequest) {
         updateData.approvedBy = null;
         updateData.approvedAt = null;
       }
+
+      if (action === "reverse") {
+        updateData.paidAt = null;
+        updateData.approvedBy = null;
+        updateData.approvedAt = null;
+      }
+
+      // "cancel" needs no extra fields — just the status change to CANCELLED
 
       // 4e. Apply the update
       await prisma.payable.update({

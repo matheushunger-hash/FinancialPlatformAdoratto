@@ -96,6 +96,15 @@ export async function POST(
     updateData.approvedAt = null;
   }
 
+  if (action === "reverse") {
+    // Full reset: clear payment AND approval fields (back to PENDING)
+    updateData.paidAt = null;
+    updateData.approvedBy = null;
+    updateData.approvedAt = null;
+  }
+
+  // "cancel" needs no extra fields — just the status change to CANCELLED
+
   try {
     const updated = await prisma.payable.update({
       where: { id },

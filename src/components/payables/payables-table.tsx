@@ -14,9 +14,11 @@ import {
   ArrowUpDown,
   CheckCircle,
   CreditCard,
+  Ban,
   MoreHorizontal,
   Pencil,
   RotateCcw,
+  Undo2,
   XCircle,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
@@ -101,6 +103,8 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   reject: <XCircle className="mr-2 h-4 w-4" />,
   pay: <CreditCard className="mr-2 h-4 w-4" />,
   reopen: <RotateCcw className="mr-2 h-4 w-4" />,
+  reverse: <Undo2 className="mr-2 h-4 w-4 text-amber-600" />,
+  cancel: <Ban className="mr-2 h-4 w-4 text-red-600" />,
 };
 
 // --- Column Definitions (factory — needs userRole and callbacks) ---
