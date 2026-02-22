@@ -16,7 +16,9 @@ export interface DashboardKPIs {
   totalPayable: KPICard; // Blue — status IN (PENDING, APPROVED)
   overdue: KPICard; // Red — due date passed, still pending/approved
   dueSoon: KPICard; // Amber — due within 7 days
-  paidThisMonth: KPICard; // Green — paid in the selected month
+  paidThisMonth: KPICard; // Green — paid in the selected period
+  dueInPeriod: KPICard; // Purple — active payables due in the selected period
+  insuredInPeriod: KPICard; // Teal — payables tagged "segurado" in the period
 }
 
 // =============================================================================

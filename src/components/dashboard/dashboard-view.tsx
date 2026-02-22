@@ -75,8 +75,24 @@ export function DashboardView() {
 
   return (
     <div className="space-y-8">
+      {/* Snapshot KPIs — always live, independent of period filter */}
+      <KPICards
+        data={data}
+        loading={loading}
+        error={error}
+        keys={["totalPayable", "overdue", "dueSoon"]}
+      />
+
+      {/* Period selector — visually separates frozen KPIs from filtered content */}
       <PeriodSelector from={from} to={to} onChange={handlePeriodChange} />
-      <KPICards data={data} loading={loading} error={error} />
+
+      {/* Period-filtered content: KPI 4 + all charts */}
+      <KPICards
+        data={data}
+        loading={loading}
+        error={error}
+        keys={["paidThisMonth", "dueInPeriod", "insuredInPeriod"]}
+      />
       <DashboardCharts charts={data?.charts ?? null} loading={loading} />
     </div>
   );

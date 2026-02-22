@@ -5,6 +5,8 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle,
+  CalendarClock,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,6 +59,20 @@ const CARD_CONFIGS: CardConfig[] = [
     borderColor: "border-l-green-500",
     iconColor: "text-green-500",
   },
+  {
+    key: "dueInPeriod",
+    icon: CalendarClock,
+    color: "purple",
+    borderColor: "border-l-purple-500",
+    iconColor: "text-purple-500",
+  },
+  {
+    key: "insuredInPeriod",
+    icon: ShieldCheck,
+    color: "teal",
+    borderColor: "border-l-teal-500",
+    iconColor: "text-teal-500",
+  },
 ];
 
 function formatBRL(value: number): string {
@@ -79,14 +95,32 @@ function KPICardSkeleton() {
   );
 }
 
+// Grid column classes based on how many cards are shown
+const GRID_CLASSES: Record<number, string> = {
+  1: "grid grid-cols-1 gap-4 sm:max-w-sm",
+  2: "grid grid-cols-1 gap-4 sm:grid-cols-2",
+  3: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+  4: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4",
+  5: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5",
+  6: "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3",
+};
+
 // Props received from the DashboardView orchestrator
 interface KPICardsProps {
   data: DashboardKPIs | null;
   loading: boolean;
   error: string | null;
+  keys?: (keyof DashboardKPIs)[]; // Optional filter — show only these cards
 }
 
-export function KPICards({ data, loading, error }: KPICardsProps) {
+export function KPICards({ data, loading, error, keys }: KPICardsProps) {
+  // Filter configs based on keys prop (show all if not provided)
+  const configs = keys
+    ? CARD_CONFIGS.filter((c) => keys.includes(c.key))
+    : CARD_CONFIGS;
+
+  const gridClass = GRID_CLASSES[configs.length] ?? GRID_CLASSES[4];
+
   // Error state
   if (error) {
     return (
@@ -96,11 +130,11 @@ export function KPICards({ data, loading, error }: KPICardsProps) {
     );
   }
 
-  // Loading state — 4 skeleton cards in the same grid layout
+  // Loading state — skeleton cards matching the filtered count
   if (loading || !data) {
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
+      <div className={gridClass}>
+        {configs.map((_, i) => (
           <KPICardSkeleton key={i} />
         ))}
       </div>
@@ -108,9 +142,10 @@ export function KPICards({ data, loading, error }: KPICardsProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {CARD_CONFIGS.map((config) => {
-        const kpi: KPICard = data[config.key];
+    <div className={gridClass}>
+      {configs.map((config) => {
+        const kpi = data[config.key] as KPICard | undefined;
+        if (!kpi) return null; // Guard: skip if API hasn't returned this KPI yet
         const Icon = config.icon;
 
         return (

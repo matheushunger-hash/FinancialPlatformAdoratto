@@ -9,7 +9,7 @@ import type {
 // =============================================================================
 // GET /api/dashboard — Financial KPI aggregations + chart data
 // =============================================================================
-// Returns 4 KPI cards and 3 chart datasets for the dashboard.
+// Returns 6 KPI cards and 3 chart datasets for the dashboard.
 // All queries are scoped by tenantId.
 //
 // Query params:
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
   const tenantScope = { tenantId: ctx.tenantId };
 
   try {
-    // Run all 8 queries in parallel for best performance
+    // Run all 10 queries in parallel for best performance
     const [
       totalPayable,
       overdue,
@@ -61,6 +61,8 @@ export async function GET(request: NextRequest) {
       dailyRaw,
       statusRaw,
       topSuppliersRaw,
+      dueInPeriod,
+      insuredInPeriod,
     ] = await Promise.all([
       // 1. Total a Pagar — all PENDING + APPROVED payables
       prisma.payable.aggregate({
@@ -145,6 +147,28 @@ export async function GET(request: NextRequest) {
         orderBy: { _sum: { payValue: "desc" } },
         take: 10,
       }),
+
+      // 9. A Vencer no Período — active payables (PENDING/APPROVED) due in the range
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 10. Segurado no Período — payables tagged "segurado" due in the range
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          tags: { has: "segurado" },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
     ]);
 
     // Calculate percentage: paid / planned * 100
@@ -223,6 +247,16 @@ export async function GET(request: NextRequest) {
         value: paidSum,
         count: paidThisMonth._count,
         percentOfPlan,
+      },
+      dueInPeriod: {
+        label: "A Vencer no Período",
+        value: Number(dueInPeriod._sum.payValue ?? 0),
+        count: dueInPeriod._count,
+      },
+      insuredInPeriod: {
+        label: "Segurado no Período",
+        value: Number(insuredInPeriod._sum.payValue ?? 0),
+        count: insuredInPeriod._count,
       },
       charts: {
         dailyPayments,
