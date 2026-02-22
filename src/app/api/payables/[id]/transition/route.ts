@@ -168,8 +168,8 @@ export async function POST(
     updateData.paidAt = new Date(paidAt + "T12:00:00");
   }
 
-  if (action === "reopen") {
-    // Clear approval tracking when reopening
+  if (action === "reopen" || action === "unapprove") {
+    // Clear approval tracking when reopening or unapproving
     updateData.approvedBy = null;
     updateData.approvedAt = null;
   }

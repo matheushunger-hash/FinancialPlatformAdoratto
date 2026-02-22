@@ -7,7 +7,7 @@
 // =============================================================================
 
 export interface StatusTransition {
-  action: string; // "approve" | "reject" | "pay" | "reopen" | "reverse" | "cancel"
+  action: string; // "approve" | "reject" | "pay" | "reopen" | "reverse" | "cancel" | "unapprove"
   label: string; // Portuguese label for button text
   to: string; // Target status
   requiredRoles: string[]; // Roles allowed to perform this action
@@ -40,6 +40,12 @@ export const TRANSITIONS: Record<string, StatusTransition[]> = {
       label: "Registrar Pagamento",
       to: "PAID",
       requiredRoles: ["ADMIN", "USER"],
+    },
+    {
+      action: "unapprove",
+      label: "Desaprovar",
+      to: "PENDING",
+      requiredRoles: ["ADMIN"],
     },
   ],
   REJECTED: [

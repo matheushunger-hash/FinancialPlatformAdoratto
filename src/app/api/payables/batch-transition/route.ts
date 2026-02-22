@@ -15,7 +15,7 @@ import type { BatchTransitionResponse } from "@/lib/payables/types";
 // =============================================================================
 
 // Known actions — used for early validation before looping
-const VALID_ACTIONS = new Set(["approve", "reject", "pay", "reopen", "reverse", "cancel"]);
+const VALID_ACTIONS = new Set(["approve", "reject", "pay", "reopen", "reverse", "cancel", "unapprove"]);
 
 export async function POST(request: NextRequest) {
   // 1. Auth check
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
         updateData.paidAt = new Date(paidAt + "T12:00:00");
       }
 
-      if (action === "reopen") {
+      if (action === "reopen" || action === "unapprove") {
         updateData.approvedBy = null;
         updateData.approvedAt = null;
       }
