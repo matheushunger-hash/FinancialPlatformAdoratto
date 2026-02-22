@@ -430,22 +430,27 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Supplier name resolution via batch lookup: collect `supplierId` array from `groupBy` results → single `findMany({ where: { id: { in: ids } } })` → `Map<id, name>` for O(1) lookups
 - Date string safety rule (UPDATED): always `.split("T")[0]` before appending `T12:00:00` — never assume a date value is already in `YYYY-MM-DD` format
 
-### 2026-02-22 — Issue #37: Reverse/Cancel Paid Payables — CLOSED
+### 2026-02-22 — Issue #37: ADMIN Status Workflow Enhancements — CLOSED
 
 **What went well:**
-- ADMIN can now reverse (`Estornar Pagamento` → PENDING) or cancel (`Cancelar` → CANCELLED) a PAID payable — PAID is no longer a dead end
-- Zero new files — the existing `TRANSITIONS` map architecture handled this perfectly. Adding 2 entries to the map made both the API validation and UI dropdown work automatically
-- Both single-transition and batch-transition APIs handle the new actions with proper field cleanup
-- `reverse` clears `paidAt`, `approvedBy`, and `approvedAt` (full reset to PENDING) — payable goes through the entire approval → payment flow again
-- `cancel` only changes status to CANCELLED (terminal) — preserves payment history for audit
-- Both actions are ADMIN-only — USER role cannot reverse or cancel payments
-- Lucide icons: `Undo2` (amber) for reverse, `Ban` (red) for cancel — visually distinct in the dropdown
-- `npx tsc --noEmit` passes with zero errors, 4 files changed (4 modified, 0 new), 0 new dependencies
+- 3 commits covering the full scope: reverse/cancel paid payables → ADMIN force-status override → unapprove transition
+- **Reverse & cancel**: ADMIN can now reverse (`Estornar Pagamento` → PENDING) or cancel (`Cancelar` → CANCELLED) a PAID payable — PAID is no longer a dead end
+- **Force-status override**: "Alterar Status" menu item (ADMIN-only, all payables) opens a dialog where the admin picks any target status from a select dropdown. Conditional date picker appears when PAID is selected. Bypasses the transition map entirely — a separate code path in the API
+- **Unapprove**: ADMIN can "Desaprovar" an approved payable back to PENDING — clears approval fields, same cleanup logic as `reopen`
+- The existing `TRANSITIONS` map architecture made reverse/cancel/unapprove trivial — adding entries to the map made both API validation and UI dropdown work automatically (4-file recipe)
+- Force-status dialog follows the same pattern as `PayablePayDialog` — controlled open/close via orchestrator state, same Popover + Calendar for date picking
+- Smart field cleanup in force-status: target PAID sets payment + approval, target APPROVED sets approval + clears payment, anything else clears all downstream fields
+- `npx tsc --noEmit` passes with zero errors across all 3 commits, 6 files changed (5 modified, 1 new), 0 new dependencies
 
 **Mistakes caught — avoid next time:**
-1. No new mistakes — the transition map pattern from ADR-010 made this a clean, surgical change
+1. **Prisma pg driver adapter may return enum values in different casing** — `payable.status` came back as `"Paid"` (mixed case) instead of `"PAID"` (Prisma schema casing). `TRANSITIONS["Paid"]` returned `undefined`, causing "action not valid" errors for PAID payables. Fix: always `.toUpperCase()` on `payable.status` before looking up in the TRANSITIONS map. Applied to both single and batch transition routes
+2. **This casing issue only manifested for PAID status** — other statuses (PENDING, APPROVED, REJECTED) matched uppercase, so existing transitions worked fine. The bug was invisible until we added outgoing transitions from PAID
 
 **Patterns established:**
 - Adding workflow transitions is a 4-file change: transitions map (source of truth) → single API (field cleanup) → batch API (field cleanup + VALID_ACTIONS) → table (action icons)
 - `reverse` action clears ALL downstream fields (payment + approval) when resetting to an earlier status — ensures the payable re-enters the full workflow cleanly
 - Terminal-to-non-terminal transitions (PAID → PENDING) are safe as long as downstream fields are cleared — no orphaned approval/payment data
+- Force-status (`action: "force-status"`) is a separate code path from the transition map — it validates ADMIN role, validates target status against a whitelist, and handles field cleanup based on target. Keeps the normal workflow clean while giving ADMINs full override capability
+- `ForceStatusDialog` pattern: status select + conditional date picker (only for PAID target), controlled by `forceStatusPayableId` state in orchestrator — same open/close pattern as `PayablePayDialog`
+- Enum casing safety rule: always `.toUpperCase()` on `payable.status` before looking up in `TRANSITIONS` — defensive against pg driver adapter returning mixed-case enum values
+- Actions that share the same cleanup logic can be combined: `if (action === "reopen" || action === "unapprove")` — both clear approval fields when returning to PENDING
