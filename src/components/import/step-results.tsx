@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, CheckCircle, Truck } from "lucide-react";
+import { AlertCircle, CheckCircle, RefreshCw, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -28,11 +28,12 @@ interface StepResultsProps {
 
 export function StepResults({ results, onReset }: StepResultsProps) {
   const hasErrors = results.errors.length > 0;
+  const hasUpdates = results.updated > 0;
 
   return (
     <div className="space-y-6">
       {/* Summary cards */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={hasUpdates ? "grid gap-4 sm:grid-cols-4" : "grid gap-4 sm:grid-cols-3"}>
         <Card>
           <CardContent className="flex items-center gap-3 pt-6">
             <div className="rounded-full bg-green-500/10 p-2">
@@ -44,6 +45,20 @@ export function StepResults({ results, onReset }: StepResultsProps) {
             </div>
           </CardContent>
         </Card>
+
+        {hasUpdates && (
+          <Card>
+            <CardContent className="flex items-center gap-3 pt-6">
+              <div className="rounded-full bg-purple-500/10 p-2">
+                <RefreshCw className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{results.updated}</p>
+                <p className="text-sm text-muted-foreground">Títulos Atualizados</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardContent className="flex items-center gap-3 pt-6">

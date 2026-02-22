@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -45,8 +46,10 @@ interface StepMappingProps {
   rows: RawRow[];
   mapping: ColumnMapping[];
   defaults: ImportDefaults;
+  updateExisting: boolean;
   onMappingChange: (mapping: ColumnMapping[]) => void;
   onDefaultsChange: (defaults: ImportDefaults) => void;
+  onUpdateExistingChange: (value: boolean) => void;
   onBack: () => void;
   onConfirm: () => void;
 }
@@ -56,8 +59,10 @@ export function StepMapping({
   rows,
   mapping,
   defaults,
+  updateExisting,
   onMappingChange,
   onDefaultsChange,
+  onUpdateExistingChange,
   onBack,
   onConfirm,
 }: StepMappingProps) {
@@ -256,6 +261,25 @@ export function StepMapping({
                   <SelectItem value="CHEQUE">Cheque</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-start space-x-3">
+            <Checkbox
+              id="updateExisting"
+              checked={updateExisting}
+              onCheckedChange={(checked) =>
+                onUpdateExistingChange(checked === true)
+              }
+            />
+            <div className="space-y-1 leading-none">
+              <Label htmlFor="updateExisting" className="cursor-pointer">
+                Atualizar títulos existentes
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Busca títulos pelo fornecedor + valor + vencimento e atualiza o
+                status ao invés de criar duplicados.
+              </p>
             </div>
           </div>
         </CardContent>

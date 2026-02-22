@@ -188,6 +188,10 @@ const HEADER_PATTERNS: { field: TargetFieldKey; patterns: RegExp[] }[] = [
     field: "tags",
     patterns: [/tags?/i, /etiquetas?/i, /labels?/i],
   },
+  {
+    field: "paidStatus",
+    patterns: [/pago\??/i, /paid/i, /status.*pagamento/i, /já pago/i],
+  },
 ];
 
 /**

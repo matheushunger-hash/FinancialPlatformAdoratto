@@ -39,6 +39,7 @@ export function ImportView() {
     category: "DESPESA",
     paymentMethod: "BOLETO",
   });
+  const [updateExisting, setUpdateExisting] = useState(false);
   const [results, setResults] = useState<ImportResponse | null>(null);
 
   // --- Step 1 callback: file parsed ---
@@ -61,7 +62,7 @@ export function ImportView() {
       const response = await fetch("/api/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows, mapping, defaults }),
+        body: JSON.stringify({ rows, mapping, defaults, updateExisting }),
       });
 
       if (!response.ok) {
@@ -74,11 +75,14 @@ export function ImportView() {
       setStep("results");
 
       if (data.errors.length === 0) {
-        toast.success(`${data.created} títulos importados com sucesso!`);
+        const parts = [`${data.created} importados`];
+        if (data.updated > 0) parts.push(`${data.updated} atualizados`);
+        toast.success(parts.join(", ") + "!");
       } else {
-        toast.warning(
-          `${data.created} importados, ${data.errors.length} erros.`,
-        );
+        const parts = [`${data.created} importados`];
+        if (data.updated > 0) parts.push(`${data.updated} atualizados`);
+        parts.push(`${data.errors.length} erros`);
+        toast.warning(parts.join(", ") + ".");
       }
     } catch (err) {
       toast.error(
@@ -97,6 +101,7 @@ export function ImportView() {
     setRows([]);
     setMapping([]);
     setDefaults({ category: "DESPESA", paymentMethod: "BOLETO" });
+    setUpdateExisting(false);
     setResults(null);
   }
 
@@ -164,8 +169,10 @@ export function ImportView() {
           rows={rows}
           mapping={mapping}
           defaults={defaults}
+          updateExisting={updateExisting}
           onMappingChange={setMapping}
           onDefaultsChange={setDefaults}
+          onUpdateExistingChange={setUpdateExisting}
           onBack={() => setStep("preview")}
           onConfirm={handleMappingConfirm}
         />

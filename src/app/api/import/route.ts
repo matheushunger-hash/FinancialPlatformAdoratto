@@ -42,14 +42,14 @@ export async function POST(request: NextRequest) {
   // Extract once so TypeScript knows these are non-null inside nested functions
   const { userId, tenantId } = ctx;
 
-  let body: { rows: RawRow[]; mapping: ColumnMapping[]; defaults: ImportDefaults };
+  let body: { rows: RawRow[]; mapping: ColumnMapping[]; defaults: ImportDefaults; updateExisting?: boolean };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { rows, mapping, defaults } = body;
+  const { rows, mapping, defaults, updateExisting = false } = body;
 
   // --- Basic validation ---
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -205,6 +205,7 @@ export async function POST(request: NextRequest) {
 
   // --- Process rows ---
   let createdCount = 0;
+  let updatedCount = 0;
   let suppliersCreatedCount = 0;
   const errors: ImportError[] = [];
 
@@ -291,10 +292,41 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Determine paid status from the "Pago?" column
+      const rawPaidStatus = getField(row, "paidStatus");
+      const isPaid = /^sim$/i.test(String(rawPaidStatus || "").trim());
+      const status = isPaid ? "PAID" : "PENDING";
+      const paidAt = isPaid ? new Date() : null;
+
       // Find or create supplier
       const rawDocument = getField(row, "document");
       const supplier = await findOrCreateSupplier(supplierName, rawDocument);
       if (supplier.created) suppliersCreatedCount++;
+
+      const parsedDueDate = new Date(dueDate + "T12:00:00");
+      const parsedIssueDate = new Date(issueDate + "T12:00:00");
+
+      // Update mode: check for existing payable by supplier + amount + dueDate
+      if (updateExisting) {
+        const existing = await prisma.payable.findFirst({
+          where: {
+            tenantId,
+            supplierId: supplier.id,
+            amount,
+            dueDate: parsedDueDate,
+          },
+          select: { id: true },
+        });
+
+        if (existing) {
+          await prisma.payable.update({
+            where: { id: existing.id },
+            data: { status, paidAt },
+          });
+          updatedCount++;
+          continue; // Skip creation — we updated instead
+        }
+      }
 
       // Create payable — dates use T12:00:00 noon trick per timezone rules
       await prisma.payable.create({
@@ -305,14 +337,15 @@ export async function POST(request: NextRequest) {
           description,
           amount,
           payValue,
-          issueDate: new Date(issueDate + "T12:00:00"),
-          dueDate: new Date(dueDate + "T12:00:00"),
-          status: "PENDING",
+          issueDate: parsedIssueDate,
+          dueDate: parsedDueDate,
+          status,
           category,
           paymentMethod,
           invoiceNumber: invoiceStr || null,
           notes: notesStr || null,
           tags,
+          paidAt,
         },
       });
 
@@ -325,6 +358,7 @@ export async function POST(request: NextRequest) {
 
   const response: ImportResponse = {
     created: createdCount,
+    updated: updatedCount,
     suppliersCreated: suppliersCreatedCount,
     errors,
   };

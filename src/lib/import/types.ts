@@ -21,6 +21,7 @@ export const TARGET_FIELDS = [
   { key: "invoiceNumber", label: "Número NF-e", required: false },
   { key: "notes", label: "Observações", required: false },
   { key: "tags", label: "Tags", required: false },
+  { key: "paidStatus", label: "Pago?", required: false },
 ] as const;
 
 export type TargetFieldKey = (typeof TARGET_FIELDS)[number]["key"];
@@ -53,6 +54,7 @@ export interface ImportRequest {
   rows: RawRow[];
   mapping: ColumnMapping[];
   defaults: ImportDefaults;
+  updateExisting?: boolean;
 }
 
 export interface ImportError {
@@ -62,6 +64,7 @@ export interface ImportError {
 
 export interface ImportResponse {
   created: number;
+  updated: number;
   suppliersCreated: number;
   errors: ImportError[];
 }
