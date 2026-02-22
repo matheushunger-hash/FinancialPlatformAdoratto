@@ -92,15 +92,16 @@ export async function GET(request: NextRequest) {
     conditions.push({ paymentMethod: methodParam });
   }
 
-  // Date range — append time components to avoid UTC timezone shift (ADR-008 lesson)
+  // Date range — use explicit UTC (Z suffix) so server timezone doesn't shift boundaries.
+  // Without Z, "T23:59:59" in UTC-3 becomes next day 02:59 UTC → includes one extra day.
   const dueDateFrom = searchParams.get("dueDateFrom") || "";
   if (dueDateFrom) {
-    conditions.push({ dueDate: { gte: new Date(dueDateFrom + "T00:00:00") } });
+    conditions.push({ dueDate: { gte: new Date(dueDateFrom + "T00:00:00.000Z") } });
   }
 
   const dueDateTo = searchParams.get("dueDateTo") || "";
   if (dueDateTo) {
-    conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59") } });
+    conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59.999Z") } });
   }
 
   // Scope every query to the tenant — everyone in the org sees the same payables

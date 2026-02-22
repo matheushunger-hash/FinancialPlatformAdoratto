@@ -33,9 +33,9 @@ export async function GET(request: NextRequest) {
   const fromParam = searchParams.get("from") || defaultFrom;
   const toParam = searchParams.get("to") || defaultTo;
 
-  // Build date boundaries
-  const rangeStart = new Date(fromParam + "T00:00:00");
-  const rangeEnd = new Date(toParam + "T23:59:59.999");
+  // Build date boundaries — explicit UTC (Z suffix) so server timezone doesn't shift dates
+  const rangeStart = new Date(fromParam + "T00:00:00.000Z");
+  const rangeEnd = new Date(toParam + "T23:59:59.999Z");
 
   // "today" at midnight local time — used for overdue/due-soon comparisons
   const today = new Date();
