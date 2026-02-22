@@ -479,3 +479,22 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - `formatDateLabel(isoDate)` for chart X-axis: `"2026-02-15"` → `"15/02"` using string splitting (no Date parsing = no timezone risk)
 - `Suspense` boundary rule: any page rendering a client component that uses `useSearchParams()` must wrap it in `<Suspense>` — Next.js App Router requirement
 - `router.replace()` for filter state changes (no extra history entries) — users navigate between periods via presets/pickers, browser back/forward still works for cross-page navigation
+
+### 2026-02-22 — Period-Filtered KPIs: "A Vencer" and "Segurado no Período" — CLOSED
+
+**What went well:**
+- 2 new period-filtered KPI cards on the dashboard: "A Vencer no Período" (active payables due in range) and "Segurado no Período" (payables tagged `"segurado"` due in range)
+- Added 2 Prisma `aggregate` queries (9 and 10) inside the existing `Promise.all` — all 10 queries run in parallel, minimal performance impact
+- Dashboard now has a clear 2-section layout: 3 frozen snapshot KPIs on top, then period selector, then 3 period-filtered KPIs + charts below
+- `GRID_CLASSES` extended to handle up to 6 cards — period section uses `lg:grid-cols-3` for its 3 cards
+- Defensive `if (!kpi) return null` guard prevents crash when API response is stale or server hasn't restarted yet
+- `npx tsc --noEmit` passes with zero errors, 4 files changed (4 modified), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. **UI can render before the API route is rebuilt** — after adding new fields to the API response, the dev server may still serve a cached response missing the new fields. `data[config.key]` returns `undefined`, causing `Cannot read properties of undefined (reading 'label')`. Fix: always cast to `KPICard | undefined` and guard with `if (!kpi) return null` before accessing properties. This makes the component resilient to partial/stale API responses
+
+**Patterns established:**
+- Prisma `tags: { has: "segurado" }` for filtering by a value inside a `String[]` array column — Prisma's `has` operator checks if the array contains the given string
+- Defensive KPI rendering: `as KPICard | undefined` + null guard in the `.map()` loop — prevents crashes when the API shape evolves but the server hasn't restarted yet
+- KPI section split pattern: `keys={["totalPayable", "overdue", "dueSoon"]}` for frozen cards, `keys={["paidThisMonth", "dueInPeriod", "insuredInPeriod"]}` for period-filtered cards — same component, different data slices
+- New KPI recipe (4-file change): types (add field) → API route (add query + response field) → kpi-cards (add config entry) → dashboard-view (add key to the appropriate section)
