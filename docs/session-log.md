@@ -5,6 +5,21 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #54: Timezone Bug in Validation — CLOSED
+
+**What was built:**
+- 2-line fix in `src/lib/payables/validation.ts` — appended `T12:00:00` to bare `new Date()` calls on lines 93-94
+
+**What went well:**
+- Full codebase audit before creating the issue — identified 1 critical bug, 2 medium fragile patterns, and confirmed all other files are clean
+- The audit approach (search every `new Date(` call) is a reusable recipe for future timezone audits
+
+**Patterns reinforced:**
+- The three timezone rules from Issue #40 still hold — this bug was a missed spot from that original audit
+- When creating bug issues, include the full audit results so the fix is scoped precisely
+
+---
+
 ### 2026-02-22 — Issue #50: Delete Payable — CLOSED
 
 **What was built:**
