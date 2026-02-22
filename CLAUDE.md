@@ -498,3 +498,26 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Defensive KPI rendering: `as KPICard | undefined` + null guard in the `.map()` loop — prevents crashes when the API shape evolves but the server hasn't restarted yet
 - KPI section split pattern: `keys={["totalPayable", "overdue", "dueSoon"]}` for frozen cards, `keys={["paidThisMonth", "dueInPeriod", "insuredInPeriod"]}` for period-filtered cards — same component, different data slices
 - New KPI recipe (4-file change): types (add field) → API route (add query + response field) → kpi-cards (add config entry) → dashboard-view (add key to the appropriate section)
+
+### 2026-02-22 — Issue #34: Redesign Metadata Panel — CLOSED
+
+**What went well:**
+- Replaced the plain `bg-muted` metadata box in the payable edit form with a polished shadcn Card layout
+- Card header shows "Auditoria" title + status Badge (using shared `STATUS_CONFIG` for consistent colors)
+- 3 grouped sections separated by `Separator`: Criação (avatar + name + relative time), Aprovação (avatar or italic "Aprovação pendente"), Pagamento (date or italic "Aguardando pagamento")
+- `formatDistanceToNow` from date-fns with `ptBR` locale for human-readable relative times ("há 3 dias")
+- Hover `title` attribute on relative times shows absolute date/time as native browser tooltip
+- Refactored `getInitials` from local function in `nav-user.tsx` to shared export in `src/lib/utils.ts` — now reused by both the sidebar avatar and the metadata panel
+- Refactored `STATUS_CONFIG` from local constant in `payables-table.tsx` to shared export in `src/lib/payables/types.ts` — now reused by both the table badges and the metadata panel badge
+- `npx tsc --noEmit` passes with zero errors, 5 files changed (5 modified), 0 new files, 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this session — patterns were well-established from previous ADRs
+
+**Patterns established:**
+- Shared `getInitials(name)` in `src/lib/utils.ts` — extracts up to 2 uppercase initials from any name string, reusable anywhere avatars are needed
+- Shared `STATUS_CONFIG` in `src/lib/payables/types.ts` — single source of truth for status → `{ label, variant }` mapping, used by table and form
+- IIFE pattern in JSX for local variables: `{isEditing && (() => { const x = ...; return (...); })()}` — lets you compute values once without polluting the component scope
+- Audit metadata Card pattern: `Card` > `CardHeader` (title + badge) > `CardContent` (avatar sections separated by `Separator`) — reusable for any entity's audit trail
+- `formatDistanceToNow` with `{ addSuffix: true, locale: ptBR }` for Portuguese relative times — "há 3 dias", "há 2 horas"
+- Native `title` attribute for absolute date tooltips — zero-dependency alternative to tooltip components for simple hover info
