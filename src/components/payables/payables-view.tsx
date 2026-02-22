@@ -21,6 +21,7 @@ import { PayablesTable } from "@/components/payables/payables-table";
 import { PayablesFilters } from "@/components/payables/payables-filters";
 import { PayablesPagination } from "@/components/payables/payables-pagination";
 import { PayableSheet } from "@/components/payables/payable-sheet";
+import { ForceStatusDialog } from "@/components/payables/force-status-dialog";
 import { PayablePayDialog } from "@/components/payables/payable-pay-dialog";
 import { exportPayablesToCSV } from "@/lib/payables/export-csv";
 import type {
@@ -57,6 +58,9 @@ export function PayablesView({ userRole }: PayablesViewProps) {
 
   // Payment modal state — stores the payable ID that is being paid (ADR-010)
   const [payingPayableId, setPayingPayableId] = useState<string | null>(null);
+
+  // Force-status dialog state — stores the payable ID for admin override
+  const [forceStatusPayableId, setForceStatusPayableId] = useState<string | null>(null);
 
   // Row selection state for batch actions (ADR-011)
   // TanStack format: { "0": true, "2": true } where keys are row indices
@@ -189,6 +193,34 @@ export function PayablesView({ userRole }: PayablesViewProps) {
     }
   }
 
+  // Force-status handler — ADMIN override to set any status (calls transition API)
+  async function handleForceStatus(targetStatus: string, paidAt?: string) {
+    if (!forceStatusPayableId) return;
+    try {
+      const res = await fetch(`/api/payables/${forceStatusPayableId}/transition`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "force-status", targetStatus, paidAt }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erro ao alterar status");
+      }
+      toast.success("Status atualizado com sucesso");
+      setForceStatusPayableId(null);
+      fetchPayables();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Erro ao alterar status",
+      );
+    }
+  }
+
+  // Get the current status of the payable being force-changed (for the dialog)
+  const forceStatusCurrentStatus = forceStatusPayableId
+    ? payables.find((p) => p.id === forceStatusPayableId)?.status ?? ""
+    : "";
+
   // --- Batch actions (ADR-011) ---
 
   // Compute the currently selected payable objects and their total R$ value
@@ -296,6 +328,7 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         onTransition={handleTransition}
         onRequestPay={(id) => setPayingPayableId(id)}
         onEdit={handleEdit}
+        onRequestForceStatus={(id) => setForceStatusPayableId(id)}
         rowSelection={rowSelection}
         onRowSelectionChange={setRowSelection}
       />
@@ -318,6 +351,18 @@ export function PayablesView({ userRole }: PayablesViewProps) {
         }}
         onSuccess={handleSuccess}
         payableId={editingPayableId}
+      />
+
+      {/* Force-status dialog — ADMIN override (any status) */}
+      <ForceStatusDialog
+        open={forceStatusPayableId !== null}
+        currentStatus={forceStatusCurrentStatus}
+        onOpenChange={(open) => {
+          if (!open) setForceStatusPayableId(null);
+        }}
+        onConfirm={(targetStatus, paidAt) => {
+          handleForceStatus(targetStatus, paidAt);
+        }}
       />
 
       {/* Payment date modal — single item (ADR-010) */}

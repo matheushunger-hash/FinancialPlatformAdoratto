@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-table";
 import {
   ArrowDown,
+  ArrowRightLeft,
   ArrowUp,
   ArrowUpDown,
   CheckCircle,
@@ -65,6 +66,7 @@ interface PayablesTableProps {
   onTransition: (id: string, action: string) => void;
   onRequestPay: (id: string) => void;
   onEdit: (id: string) => void;
+  onRequestForceStatus: (id: string) => void;
   rowSelection: RowSelectionState;
   onRowSelectionChange: (selection: RowSelectionState) => void;
 }
@@ -115,6 +117,7 @@ function buildColumns(
   onTransition: (id: string, action: string) => void,
   onRequestPay: (id: string) => void,
   onEdit: (id: string) => void,
+  onRequestForceStatus: (id: string) => void,
 ) {
   return [
     // 0. Checkbox — select row (ADR-011)
@@ -323,7 +326,16 @@ function buildColumns(
                   {t.label}
                 </DropdownMenuItem>
               ))}
-              {!canEdit && actions.length === 0 && (
+              {userRole === "ADMIN" && (
+                <>
+                  {(canEdit || actions.length > 0) && <DropdownMenuSeparator />}
+                  <DropdownMenuItem onClick={() => onRequestForceStatus(payable.id)}>
+                    <ArrowRightLeft className="mr-2 h-4 w-4" />
+                    Alterar Status
+                  </DropdownMenuItem>
+                </>
+              )}
+              {!canEdit && actions.length === 0 && userRole !== "ADMIN" && (
                 <DropdownMenuItem disabled>
                   Sem ações disponíveis
                 </DropdownMenuItem>
@@ -353,12 +365,13 @@ export function PayablesTable({
   onTransition,
   onRequestPay,
   onEdit,
+  onRequestForceStatus,
   rowSelection,
   onRowSelectionChange,
 }: PayablesTableProps) {
   // Build columns with callbacks — memoize via useMemo would be an option,
   // but since TanStack Table recreates on every render anyway, it's fine here.
-  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit);
+  const columns = buildColumns(userRole, onTransition, onRequestPay, onEdit, onRequestForceStatus);
 
   // Convert our sort/order props into TanStack's SortingState format
   const sorting: SortingState = [{ id: sort, desc: order === "desc" }];

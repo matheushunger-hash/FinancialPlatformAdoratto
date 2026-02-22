@@ -429,3 +429,23 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Chart layout: stacked bar full-width, donut + horizontal bar side-by-side below (`grid-cols-1 lg:grid-cols-2`)
 - Supplier name resolution via batch lookup: collect `supplierId` array from `groupBy` results → single `findMany({ where: { id: { in: ids } } })` → `Map<id, name>` for O(1) lookups
 - Date string safety rule (UPDATED): always `.split("T")[0]` before appending `T12:00:00` — never assume a date value is already in `YYYY-MM-DD` format
+
+### 2026-02-22 — Issue #37: Reverse/Cancel Paid Payables — CLOSED
+
+**What went well:**
+- ADMIN can now reverse (`Estornar Pagamento` → PENDING) or cancel (`Cancelar` → CANCELLED) a PAID payable — PAID is no longer a dead end
+- Zero new files — the existing `TRANSITIONS` map architecture handled this perfectly. Adding 2 entries to the map made both the API validation and UI dropdown work automatically
+- Both single-transition and batch-transition APIs handle the new actions with proper field cleanup
+- `reverse` clears `paidAt`, `approvedBy`, and `approvedAt` (full reset to PENDING) — payable goes through the entire approval → payment flow again
+- `cancel` only changes status to CANCELLED (terminal) — preserves payment history for audit
+- Both actions are ADMIN-only — USER role cannot reverse or cancel payments
+- Lucide icons: `Undo2` (amber) for reverse, `Ban` (red) for cancel — visually distinct in the dropdown
+- `npx tsc --noEmit` passes with zero errors, 4 files changed (4 modified, 0 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes — the transition map pattern from ADR-010 made this a clean, surgical change
+
+**Patterns established:**
+- Adding workflow transitions is a 4-file change: transitions map (source of truth) → single API (field cleanup) → batch API (field cleanup + VALID_ACTIONS) → table (action icons)
+- `reverse` action clears ALL downstream fields (payment + approval) when resetting to an earlier status — ensures the payable re-enters the full workflow cleanly
+- Terminal-to-non-terminal transitions (PAID → PENDING) are safe as long as downstream fields are cleared — no orphaned approval/payment data

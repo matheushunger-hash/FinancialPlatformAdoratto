@@ -80,7 +80,9 @@ export async function POST(request: NextRequest) {
       }
 
       // 4b. Check if the transition is valid for this payable's current status
-      const transitions = TRANSITIONS[payable.status] ?? [];
+      // Normalize to uppercase — pg driver adapter may return mixed-case enum values
+      const status = payable.status.toUpperCase();
+      const transitions = TRANSITIONS[status] ?? [];
       const transition = transitions.find((t) => t.action === action);
 
       if (!transition) {
