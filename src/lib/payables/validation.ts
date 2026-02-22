@@ -90,8 +90,8 @@ export const payableFormSchema = z
 
     // Validate that dueDate is not before issueDate
     if (data.issueDate && data.dueDate) {
-      const issue = new Date(data.issueDate);
-      const due = new Date(data.dueDate);
+      const issue = new Date(data.issueDate + "T12:00:00");
+      const due = new Date(data.dueDate + "T12:00:00");
       if (due < issue) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
