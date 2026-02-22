@@ -9,7 +9,7 @@ export interface KPICard {
   label: string; // e.g. "Total a Pagar"
   value: number; // Sum in R$
   count: number; // Number of payables
-  percentOfPlan?: number; // Only for "Pagos no Mês" (0–100)
+  percentOfPlan?: number; // Only for "Pagos no Período" (0–100)
 }
 
 export interface DashboardKPIs {
@@ -25,7 +25,7 @@ export interface DashboardKPIs {
 
 // One row per day in the stacked bar chart — each status has its R$ sum
 export interface DailyPaymentData {
-  day: number; // 1–31
+  date: string; // "2026-02-15" (ISO date — works across months)
   PENDING: number;
   APPROVED: number;
   PAID: number;

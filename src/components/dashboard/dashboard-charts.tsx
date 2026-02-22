@@ -83,6 +83,12 @@ interface TooltipPayload {
   dataKey: string;
 }
 
+// Format "2026-02-15" → "15/02"
+function formatDateLabel(isoDate: string): string {
+  const parts = isoDate.split("-");
+  return `${parts[2]}/${parts[1]}`;
+}
+
 function CustomBarTooltip({
   active,
   payload,
@@ -90,7 +96,7 @@ function CustomBarTooltip({
 }: {
   active?: boolean;
   payload?: TooltipPayload[];
-  label?: number;
+  label?: string;
 }) {
   if (!active || !payload?.length) return null;
 
@@ -100,7 +106,7 @@ function CustomBarTooltip({
 
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">
-      <p className="mb-1 font-medium">Dia {label}</p>
+      <p className="mb-1 font-medium">{label ? formatDateLabel(label) : ""}</p>
       {nonZero.map((entry) => (
         <div key={entry.dataKey} className="flex items-center gap-2">
           <span
@@ -227,12 +233,12 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            Pagamentos por Dia do Mês
+            Pagamentos por Dia
           </CardTitle>
         </CardHeader>
         <CardContent>
           {charts.dailyPayments.length === 0 ? (
-            <EmptyChart message="Sem dados para este mês." />
+            <EmptyChart message="Sem dados para este período." />
           ) : (
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={charts.dailyPayments}>
@@ -241,10 +247,11 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
                   className="stroke-border"
                 />
                 <XAxis
-                  dataKey="day"
+                  dataKey="date"
                   tick={tickStyle}
                   tickLine={false}
                   axisLine={false}
+                  tickFormatter={formatDateLabel}
                 />
                 <YAxis
                   tick={tickStyle}
@@ -284,7 +291,7 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
           </CardHeader>
           <CardContent>
             {charts.statusDistribution.length === 0 ? (
-              <EmptyChart message="Sem dados para este mês." />
+              <EmptyChart message="Sem dados para este período." />
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
@@ -326,7 +333,7 @@ export function DashboardCharts({ charts, loading }: DashboardChartsProps) {
           </CardHeader>
           <CardContent>
             {charts.topSuppliers.length === 0 ? (
-              <EmptyChart message="Sem dados para este mês." />
+              <EmptyChart message="Sem dados para este período." />
             ) : (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart

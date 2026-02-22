@@ -13,8 +13,8 @@ import type {
 // All queries are scoped by tenantId.
 //
 // Query params:
-//   month (1–12) — defaults to current month
-//   year (e.g. 2026) — defaults to current year
+//   from (ISO date, e.g. "2026-02-01") — defaults to 1st of current month
+//   to   (ISO date, e.g. "2026-02-28") — defaults to last day of current month
 // =============================================================================
 
 export async function GET(request: NextRequest) {
@@ -23,13 +23,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Parse month/year from query params, defaulting to current date
+  // Parse from/to from query params, defaulting to current month boundaries
   const { searchParams } = new URL(request.url);
   const now = new Date();
-  const month = Math.min(12, Math.max(1, Number(searchParams.get("month")) || now.getMonth() + 1));
-  const year = Number(searchParams.get("year")) || now.getFullYear();
+  const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const defaultTo = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+  const fromParam = searchParams.get("from") || defaultFrom;
+  const toParam = searchParams.get("to") || defaultTo;
 
   // Build date boundaries
+  const rangeStart = new Date(fromParam + "T00:00:00");
+  const rangeEnd = new Date(toParam + "T23:59:59.999");
+
   // "today" at midnight local time — used for overdue/due-soon comparisons
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -38,10 +45,6 @@ export async function GET(request: NextRequest) {
   const sevenDaysFromNow = new Date(today);
   sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
   sevenDaysFromNow.setHours(23, 59, 59, 999);
-
-  // First and last instant of the selected month — for "Pagos no Mês"
-  const monthStart = new Date(year, month - 1, 1); // 1st of month at 00:00
-  const monthEnd = new Date(year, month, 0, 23, 59, 59, 999); // last day at 23:59
 
   // Common filter: only this tenant, only active statuses (not yet paid/cancelled)
   const activeStatuses = ["PENDING", "APPROVED"] as const;
@@ -91,22 +94,22 @@ export async function GET(request: NextRequest) {
         _count: true,
       }),
 
-      // 4. Pagos no Mês — status PAID, paidAt within the selected month
+      // 4. Pagos no Período — status PAID, paidAt within the selected range
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
           status: "PAID",
-          paidAt: { gte: monthStart, lte: monthEnd },
+          paidAt: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 5. Planned for the month (denominator for %)
+      // 5. Planned for the period (denominator for %)
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          dueDate: { gte: monthStart, lte: monthEnd },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
       }),
@@ -116,7 +119,7 @@ export async function GET(request: NextRequest) {
         by: ["dueDate", "status"],
         where: {
           ...tenantScope,
-          dueDate: { gte: monthStart, lte: monthEnd },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
       }),
@@ -126,7 +129,7 @@ export async function GET(request: NextRequest) {
         by: ["status"],
         where: {
           ...tenantScope,
-          dueDate: { gte: monthStart, lte: monthEnd },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _count: true,
       }),
@@ -136,7 +139,7 @@ export async function GET(request: NextRequest) {
         by: ["supplierId"],
         where: {
           ...tenantScope,
-          dueDate: { gte: monthStart, lte: monthEnd },
+          dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
         orderBy: { _sum: { payValue: "desc" } },
@@ -160,20 +163,20 @@ export async function GET(request: NextRequest) {
       "CANCELLED",
     ] as const;
 
-    const dayMap = new Map<number, DailyPaymentData>();
+    const dayMap = new Map<string, DailyPaymentData>();
     for (const row of dailyRaw) {
-      // dueDate is @db.Date — getUTCDate() extracts the day safely
-      const day = row.dueDate.getUTCDate();
-      if (!dayMap.has(day)) {
-        const empty = { day } as DailyPaymentData;
+      // dueDate is @db.Date — extract ISO date string for cross-month support
+      const date = row.dueDate.toISOString().split("T")[0];
+      if (!dayMap.has(date)) {
+        const empty = { date } as DailyPaymentData;
         for (const s of ALL_STATUSES) empty[s] = 0;
-        dayMap.set(day, empty);
+        dayMap.set(date, empty);
       }
-      const entry = dayMap.get(day)!;
+      const entry = dayMap.get(date)!;
       entry[row.status] = Number(row._sum.payValue ?? 0);
     }
     const dailyPayments = Array.from(dayMap.values()).sort(
-      (a, b) => a.day - b.day,
+      (a, b) => a.date.localeCompare(b.date),
     );
 
     // ---- Status distribution ----
@@ -216,7 +219,7 @@ export async function GET(request: NextRequest) {
         count: dueSoon._count,
       },
       paidThisMonth: {
-        label: "Pagos no Mês",
+        label: "Pagos no Período",
         value: paidSum,
         count: paidThisMonth._count,
         percentOfPlan,

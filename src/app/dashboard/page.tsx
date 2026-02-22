@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { DashboardView } from "@/components/dashboard/dashboard-view";
 
@@ -13,7 +14,10 @@ export default function DashboardPage() {
         Visão geral da situação financeira.
       </p>
       <div className="mt-6">
-        <DashboardView />
+        {/* Suspense required because DashboardView uses useSearchParams() */}
+        <Suspense>
+          <DashboardView />
+        </Suspense>
       </div>
     </div>
   );
