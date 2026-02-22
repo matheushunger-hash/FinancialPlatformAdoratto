@@ -5,18 +5,26 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
-### 2026-02-22 — Issue #54: Timezone Bug in Validation — CLOSED
+### 2026-02-22 — Issue #54: Timezone Date Shift (Two Fixes) — CLOSED
 
 **What was built:**
-- 2-line fix in `src/lib/payables/validation.ts` — appended `T12:00:00` to bare `new Date()` calls on lines 93-94
+- Fix 1 (`e920217`): `validation.ts` — appended `T12:00:00` to bare `new Date()` in date comparison
+- Fix 2 (`418286c`): `parsing.ts` — corrected Excel serial number epoch from Dec 30 to Dec 31, 1899
+- Backfill script (`scripts/backfill-dates.ts`) — shifted all 930 existing payable dates forward by 1 day
 
 **What went well:**
-- Full codebase audit before creating the issue — identified 1 critical bug, 2 medium fragile patterns, and confirmed all other files are clean
-- The audit approach (search every `new Date(` call) is a reusable recipe for future timezone audits
+- First fix (validation.ts) was found via codebase audit — good proactive approach
+- When user reported the bug persisted, asked WHERE they saw it (import path), which narrowed the root cause to the Excel serial number parser immediately
+- Backfill script ran cleanly on 930 rows
 
-**Patterns reinforced:**
-- The three timezone rules from Issue #40 still hold — this bug was a missed spot from that original audit
-- When creating bug issues, include the full audit results so the fix is scoped precisely
+**Mistakes caught — avoid next time:**
+- The initial audit missed the Excel epoch bug because it only searched for `new Date(` with string arguments — the serial number path uses `new Date(epoch.getTime() + ...)` which is a different pattern
+- First fix was shipped prematurely before confirming with the user that the symptom was resolved
+
+**Patterns established:**
+- Excel serial number epoch: use `new Date(1899, 11, 31)` (Dec 31, 1899), NOT Dec 30. Serial 1 = Jan 1, 1900
+- When fixing a bug, always ask WHERE the user sees the symptom before assuming the root cause
+- Non-idempotent backfill scripts: add a warning comment ("running twice would shift dates 2 days") and DON'T add to automated pipelines
 
 ---
 
