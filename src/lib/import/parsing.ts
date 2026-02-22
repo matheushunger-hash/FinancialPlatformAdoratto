@@ -30,7 +30,7 @@ export function parseImportDate(value: unknown): string | null {
   // (which doesn't exist). We subtract 1 for dates after day 60 to compensate.
   if (typeof value === "number") {
     if (value < 1 || value > 2958465) return null; // Reasonable date range
-    const excelEpoch = new Date(1899, 11, 30); // Dec 30, 1899 (Excel's day 0)
+    const excelEpoch = new Date(1899, 11, 31); // Dec 31, 1899 (Excel serial 1 = Jan 1, 1900)
     const dayOffset = value > 60 ? value - 1 : value; // Lotus bug adjustment
     const date = new Date(excelEpoch.getTime() + dayOffset * 86400000);
     const yyyy = date.getFullYear();
