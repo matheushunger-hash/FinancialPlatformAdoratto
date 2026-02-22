@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { KPICards } from "@/components/dashboard/kpi-cards";
+import { DashboardView } from "@/components/dashboard/dashboard-view";
 
 export const metadata: Metadata = {
   title: "Dashboard — Adoratto",
@@ -13,7 +13,7 @@ export default function DashboardPage() {
         Visão geral da situação financeira.
       </p>
       <div className="mt-6">
-        <KPICards />
+        <DashboardView />
       </div>
     </div>
   );

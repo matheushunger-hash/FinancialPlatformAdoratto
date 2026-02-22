@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
-import type { DashboardKPIs } from "@/lib/dashboard/types";
+import type {
+  DashboardResponse,
+  DailyPaymentData,
+} from "@/lib/dashboard/types";
 
 // =============================================================================
-// GET /api/dashboard — Financial KPI aggregations
+// GET /api/dashboard — Financial KPI aggregations + chart data
 // =============================================================================
-// Returns 4 KPI cards for the dashboard: Total a Pagar, Vencidos,
-// A Vencer 7 dias, and Pagos no Mês. All queries are scoped by tenantId.
+// Returns 4 KPI cards and 3 chart datasets for the dashboard.
+// All queries are scoped by tenantId.
 //
 // Query params:
 //   month (1–12) — defaults to current month
@@ -45,70 +48,158 @@ export async function GET(request: NextRequest) {
   const tenantScope = { tenantId: ctx.tenantId };
 
   try {
-    // Run all 5 queries in parallel for best performance
-    // (5 queries because "Pagos no Mês" needs a denominator for the percentage)
-    const [totalPayable, overdue, dueSoon, paidThisMonth, plannedThisMonth] =
-      await Promise.all([
-        // 1. Total a Pagar — all PENDING + APPROVED payables
-        prisma.payable.aggregate({
-          where: {
-            ...tenantScope,
-            status: { in: [...activeStatuses] },
-          },
-          _sum: { payValue: true },
-          _count: true,
-        }),
+    // Run all 8 queries in parallel for best performance
+    const [
+      totalPayable,
+      overdue,
+      dueSoon,
+      paidThisMonth,
+      plannedThisMonth,
+      dailyRaw,
+      statusRaw,
+      topSuppliersRaw,
+    ] = await Promise.all([
+      // 1. Total a Pagar — all PENDING + APPROVED payables
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
 
-        // 2. Vencidos — dueDate < today AND still PENDING/APPROVED
-        prisma.payable.aggregate({
-          where: {
-            ...tenantScope,
-            status: { in: [...activeStatuses] },
-            dueDate: { lt: today },
-          },
-          _sum: { payValue: true },
-          _count: true,
-        }),
+      // 2. Vencidos — dueDate < today AND still PENDING/APPROVED
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+          dueDate: { lt: today },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
 
-        // 3. A Vencer 7 dias — dueDate between today and today+7, still active
-        prisma.payable.aggregate({
-          where: {
-            ...tenantScope,
-            status: { in: [...activeStatuses] },
-            dueDate: { gte: today, lte: sevenDaysFromNow },
-          },
-          _sum: { payValue: true },
-          _count: true,
-        }),
+      // 3. A Vencer 7 dias — dueDate between today and today+7, still active
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: today, lte: sevenDaysFromNow },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
 
-        // 4. Pagos no Mês — status PAID, paidAt within the selected month
-        prisma.payable.aggregate({
-          where: {
-            ...tenantScope,
-            status: "PAID",
-            paidAt: { gte: monthStart, lte: monthEnd },
-          },
-          _sum: { payValue: true },
-          _count: true,
-        }),
+      // 4. Pagos no Mês — status PAID, paidAt within the selected month
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: "PAID",
+          paidAt: { gte: monthStart, lte: monthEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
 
-        // 5. Planned for the month (denominator for %) — all payables with
-        //    dueDate in the selected month, regardless of status
-        prisma.payable.aggregate({
-          where: {
-            ...tenantScope,
-            dueDate: { gte: monthStart, lte: monthEnd },
-          },
-          _sum: { payValue: true },
-        }),
-      ]);
+      // 5. Planned for the month (denominator for %)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          dueDate: { gte: monthStart, lte: monthEnd },
+        },
+        _sum: { payValue: true },
+      }),
+
+      // 6. Daily payments — grouped by dueDate + status for stacked bar chart
+      prisma.payable.groupBy({
+        by: ["dueDate", "status"],
+        where: {
+          ...tenantScope,
+          dueDate: { gte: monthStart, lte: monthEnd },
+        },
+        _sum: { payValue: true },
+      }),
+
+      // 7. Status distribution — count of payables per status (donut chart)
+      prisma.payable.groupBy({
+        by: ["status"],
+        where: {
+          ...tenantScope,
+          dueDate: { gte: monthStart, lte: monthEnd },
+        },
+        _count: true,
+      }),
+
+      // 8. Top 10 suppliers by payValue (horizontal bar chart)
+      prisma.payable.groupBy({
+        by: ["supplierId"],
+        where: {
+          ...tenantScope,
+          dueDate: { gte: monthStart, lte: monthEnd },
+        },
+        _sum: { payValue: true },
+        orderBy: { _sum: { payValue: "desc" } },
+        take: 10,
+      }),
+    ]);
 
     // Calculate percentage: paid / planned * 100
     const paidSum = Number(paidThisMonth._sum.payValue ?? 0);
     const plannedSum = Number(plannedThisMonth._sum.payValue ?? 0);
-    const percentOfPlan = plannedSum > 0 ? Math.round((paidSum / plannedSum) * 100) : 0;
+    const percentOfPlan =
+      plannedSum > 0 ? Math.round((paidSum / plannedSum) * 100) : 0;
 
-    const response: DashboardKPIs = {
+    // ---- Pivot daily payments into one object per day ----
+    const ALL_STATUSES = [
+      "PENDING",
+      "APPROVED",
+      "PAID",
+      "OVERDUE",
+      "REJECTED",
+      "CANCELLED",
+    ] as const;
+
+    const dayMap = new Map<number, DailyPaymentData>();
+    for (const row of dailyRaw) {
+      // dueDate is @db.Date — getUTCDate() extracts the day safely
+      const day = row.dueDate.getUTCDate();
+      if (!dayMap.has(day)) {
+        const empty = { day } as DailyPaymentData;
+        for (const s of ALL_STATUSES) empty[s] = 0;
+        dayMap.set(day, empty);
+      }
+      const entry = dayMap.get(day)!;
+      entry[row.status] = Number(row._sum.payValue ?? 0);
+    }
+    const dailyPayments = Array.from(dayMap.values()).sort(
+      (a, b) => a.day - b.day,
+    );
+
+    // ---- Status distribution ----
+    const statusDistribution = statusRaw.map((row) => ({
+      status: row.status,
+      count: row._count,
+    }));
+
+    // ---- Top 10 suppliers — resolve names from IDs ----
+    const supplierIds = topSuppliersRaw.map((row) => row.supplierId);
+    const suppliers =
+      supplierIds.length > 0
+        ? await prisma.supplier.findMany({
+            where: { id: { in: supplierIds } },
+            select: { id: true, name: true },
+          })
+        : [];
+    const nameMap = new Map(suppliers.map((s) => [s.id, s.name]));
+
+    const topSuppliers = topSuppliersRaw.map((row) => ({
+      supplierName: nameMap.get(row.supplierId) ?? "Desconhecido",
+      total: Number(row._sum.payValue ?? 0),
+    }));
+
+    // ---- Build response ----
+    const response: DashboardResponse = {
       totalPayable: {
         label: "Total a Pagar",
         value: Number(totalPayable._sum.payValue ?? 0),
@@ -129,6 +220,11 @@ export async function GET(request: NextRequest) {
         value: paidSum,
         count: paidThisMonth._count,
         percentOfPlan,
+      },
+      charts: {
+        dailyPayments,
+        statusDistribution,
+        topSuppliers,
       },
     };
 

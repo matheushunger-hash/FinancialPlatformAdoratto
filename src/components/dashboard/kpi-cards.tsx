@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   DollarSign,
   AlertTriangle,
@@ -80,24 +79,14 @@ function KPICardSkeleton() {
   );
 }
 
-export function KPICards() {
-  const [data, setData] = useState<DashboardKPIs | null>(null);
-  const [error, setError] = useState<string | null>(null);
+// Props received from the DashboardView orchestrator
+interface KPICardsProps {
+  data: DashboardKPIs | null;
+  loading: boolean;
+  error: string | null;
+}
 
-  useEffect(() => {
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    const year = now.getFullYear();
-
-    fetch(`/api/dashboard?month=${month}&year=${year}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Falha ao carregar indicadores");
-        return res.json();
-      })
-      .then((json: DashboardKPIs) => setData(json))
-      .catch((err) => setError(err.message));
-  }, []);
-
+export function KPICards({ data, loading, error }: KPICardsProps) {
   // Error state
   if (error) {
     return (
@@ -108,7 +97,7 @@ export function KPICards() {
   }
 
   // Loading state — 4 skeleton cards in the same grid layout
-  if (!data) {
+  if (loading || !data) {
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
