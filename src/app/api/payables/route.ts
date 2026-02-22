@@ -20,6 +20,7 @@ const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
   dueDate: (order) => ({ dueDate: order }),
   amount: (order) => ({ amount: order }),
   payValue: (order) => ({ payValue: order }),
+  jurosMulta: (order) => ({ jurosMulta: order }),
   status: (order) => ({ status: order }),
 };
 
@@ -143,6 +144,7 @@ export async function GET(request: NextRequest) {
         dueDate: p.dueDate.toISOString(),
         amount: p.amount.toString(),
         payValue: p.payValue.toString(),
+        jurosMulta: p.jurosMulta?.toString() ?? "0",
         paymentMethod: p.paymentMethod,
         invoiceNumber: p.invoiceNumber,
         notes: p.notes,
@@ -211,6 +213,7 @@ export async function POST(request: NextRequest) {
   // Convert currency strings to numbers for Prisma's Decimal type
   const parsedAmount = parseCurrency(data.amount);
   const parsedPayValue = parseCurrency(data.payValue);
+  const jurosMulta = parsedPayValue > parsedAmount ? parsedPayValue - parsedAmount : 0;
 
   try {
     const payable = await prisma.payable.create({
@@ -222,6 +225,7 @@ export async function POST(request: NextRequest) {
         category: data.category,
         amount: parsedAmount,
         payValue: parsedPayValue,
+        jurosMulta,
         issueDate: new Date(data.issueDate + "T12:00:00"),
         dueDate: new Date(data.dueDate + "T12:00:00"),
         paymentMethod: data.paymentMethod,
@@ -244,6 +248,7 @@ export async function POST(request: NextRequest) {
         dueDate: payable.dueDate.toISOString(),
         amount: payable.amount.toString(),
         payValue: payable.payValue.toString(),
+        jurosMulta: payable.jurosMulta?.toString() ?? "0",
         paymentMethod: payable.paymentMethod,
         invoiceNumber: payable.invoiceNumber,
         notes: payable.notes,

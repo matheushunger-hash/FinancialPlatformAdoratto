@@ -87,6 +87,7 @@ export async function GET(
       dueDate: payable.dueDate.toISOString(),
       amount: payable.amount.toString(),
       payValue: payable.payValue.toString(),
+      jurosMulta: payable.jurosMulta?.toString() ?? "0",
       paymentMethod: payable.paymentMethod,
       invoiceNumber: payable.invoiceNumber,
       notes: payable.notes,
@@ -184,6 +185,7 @@ export async function PATCH(
     // Convert currency strings to numbers for Prisma's Decimal type
     const parsedAmount = parseCurrency(data.amount);
     const parsedPayValue = parseCurrency(data.payValue);
+    const jurosMulta = parsedPayValue > parsedAmount ? parsedPayValue - parsedAmount : 0;
 
     // Update all form fields EXCEPT supplierId and status
     const updated = await prisma.payable.update({
@@ -193,6 +195,7 @@ export async function PATCH(
         category: data.category,
         amount: parsedAmount,
         payValue: parsedPayValue,
+        jurosMulta,
         issueDate: new Date(data.issueDate + "T12:00:00"),
         dueDate: new Date(data.dueDate + "T12:00:00"),
         paymentMethod: data.paymentMethod,
@@ -246,6 +249,7 @@ export async function PATCH(
       dueDate: updated.dueDate.toISOString(),
       amount: updated.amount.toString(),
       payValue: updated.payValue.toString(),
+      jurosMulta: updated.jurosMulta?.toString() ?? "0",
       paymentMethod: updated.paymentMethod,
       invoiceNumber: updated.invoiceNumber,
       notes: updated.notes,

@@ -292,6 +292,9 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Compute juros/multa (interest/penalty)
+      const jurosMulta = payValue > amount ? payValue - amount : 0;
+
       // Determine paid status from the "Pago?" column
       const rawPaidStatus = getField(row, "paidStatus");
       const isPaid = /^sim$/i.test(String(rawPaidStatus || "").trim());
@@ -321,7 +324,7 @@ export async function POST(request: NextRequest) {
         if (existing) {
           await prisma.payable.update({
             where: { id: existing.id },
-            data: { status, paidAt },
+            data: { status, paidAt, jurosMulta },
           });
           updatedCount++;
           continue; // Skip creation — we updated instead
@@ -337,6 +340,7 @@ export async function POST(request: NextRequest) {
           description,
           amount,
           payValue,
+          jurosMulta,
           issueDate: parsedIssueDate,
           dueDate: parsedDueDate,
           status,

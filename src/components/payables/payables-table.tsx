@@ -234,23 +234,22 @@ function buildColumns(
       enableSorting: true,
     }),
 
-    // 7. Juros/Multa (calculated, not sortable, hidden on mobile)
-    columnHelper.display({
-      id: "interest",
+    // 7. Juros/Multa (data-driven, sortable, hidden on mobile)
+    columnHelper.accessor("jurosMulta", {
+      id: "jurosMulta",
       header: "Juros/Multa",
-      cell: ({ row }) => {
-        const amount = Number(row.original.amount);
-        const payValue = Number(row.original.payValue);
-        const diff = payValue - amount;
-        if (diff <= 0) {
+      cell: (info) => {
+        const value = Number(info.getValue());
+        if (value <= 0) {
           return <span className="text-muted-foreground">—</span>;
         }
         return (
           <span className="tabular-nums text-amber-600 dark:text-amber-400">
-            {formatBRL(diff.toFixed(2))}
+            {formatBRL(value.toFixed(2))}
           </span>
         );
       },
+      enableSorting: true,
     }),
 
     // 8. Status (sortable)
@@ -362,7 +361,7 @@ function buildColumns(
 // --- Responsive visibility classes per column ---
 const COLUMN_CLASSES: Record<string, string> = {
   supplierDocument: "hidden lg:table-cell",
-  interest: "hidden lg:table-cell",
+  jurosMulta: "hidden lg:table-cell",
   tags: "hidden lg:table-cell",
 };
 
@@ -420,7 +419,7 @@ export function PayablesTable({
                   <TableHead
                     key={header.id}
                     className={`${cellClass} ${
-                      header.id === "amount" || header.id === "payValue" || header.id === "interest"
+                      header.id === "amount" || header.id === "payValue" || header.id === "jurosMulta"
                         ? "text-right"
                         : ""
                     }`}
@@ -499,7 +498,7 @@ export function PayablesTable({
                       className={`${cellClass} ${
                         cell.column.id === "amount" ||
                         cell.column.id === "payValue" ||
-                        cell.column.id === "interest"
+                        cell.column.id === "jurosMulta"
                           ? "text-right"
                           : ""
                       }`}

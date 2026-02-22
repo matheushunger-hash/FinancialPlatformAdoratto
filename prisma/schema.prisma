@@ -133,6 +133,7 @@ model Payable {
   description   String
   amount        Decimal         @db.Decimal(12, 2) // Valor original
   payValue      Decimal         @map("pay_value") @db.Decimal(12, 2) // Valor a pagar
+  jurosMulta    Decimal?        @default(0) @map("juros_multa") @db.Decimal(12, 2) // Juros/Multa (payValue - amount)
   issueDate     DateTime        @map("issue_date") @db.Date // Data de entrada
   dueDate       DateTime        @map("due_date") @db.Date
   status        PayableStatus   @default(PENDING)

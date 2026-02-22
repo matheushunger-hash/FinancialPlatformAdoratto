@@ -15,6 +15,7 @@ export interface PayableListItem {
   dueDate: string;
   amount: string; // Decimal serialized as string
   payValue: string;
+  jurosMulta: string; // Decimal serialized as string (payValue - amount, min 0)
   paymentMethod: string;
   invoiceNumber: string | null;
   notes: string | null;
