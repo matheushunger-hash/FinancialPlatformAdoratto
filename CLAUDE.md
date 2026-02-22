@@ -148,7 +148,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode)
 
 Full session history: `docs/session-log.md`
 
@@ -544,3 +544,24 @@ Full session history: `docs/session-log.md`
 - Dark tooltips pattern: `bg-[#0A2540] text-white` in light mode, `dark:bg-popover dark:text-popover-foreground` in dark mode — Stripe's signature visual element
 - `background` prop on Recharts `<Bar>`: `background={{ fill: "var(--color-muted)", radius: 4 }}` renders a light gray track behind each data bar for progress-bar effect
 - Donut center label: Recharts `<Label content={({ viewBox }) => <text>}/>` inside `<Pie>` — render custom text at the donut center using `viewBox.cx`/`viewBox.cy` coordinates
+
+### 2026-02-22 — Issue #46: Import "Pago?" Column + Update Mode — CLOSED
+
+**What went well:**
+- New `paidStatus` target field maps the "Pago?" spreadsheet column — auto-detected via regex patterns (`Pago?`, `Paid`, `Status Pagamento`, `Já Pago`)
+- When "Pago?" value is "Sim" (case-insensitive, whitespace-trimmed), payable is created with `status: "PAID"` + `paidAt: now` instead of default `PENDING`
+- "Atualizar títulos existentes" checkbox in the mapping step enables update mode — matches existing payables by `tenantId + supplierId + amount + dueDate` and updates their status instead of creating duplicates
+- Results screen shows a 4th "Títulos Atualizados" card (purple RefreshCw icon) only when updates occurred — normal imports look identical to before
+- Toast messages dynamically include updated count (e.g., "5 importados, 3 atualizados!")
+- Fully backwards-compatible: existing imports without "Pago?" column or without "Atualizar existentes" checked behave exactly as before
+- `npx tsc --noEmit` passes with zero errors, 6 files changed (6 modified), 0 new files, 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. **Never use Tailwind dynamic class interpolation** — `sm:grid-cols-${var}` won't be detected at build time. Always use complete class strings in ternaries: `hasUpdates ? "grid gap-4 sm:grid-cols-4" : "grid gap-4 sm:grid-cols-3"`
+
+**Patterns established:**
+- Import status mapping: extract raw value via `getField(row, "paidStatus")`, normalize with `/^sim$/i.test(String(value).trim())` — exact match only, "Simples" won't trigger
+- Update mode in import API: `findFirst({ where: { tenantId, supplierId, amount, dueDate } })` to match existing payables → `update` if found, `create` if not → `continue` after update to skip creation
+- `continue` in import loop to skip creation after update — cleaner than nesting the create in an `else` block
+- Conditional results card: only render when `results.updated > 0` + adjust grid columns via full ternary class strings
+- Import feature recipe (6-file change): types (target field + request/response) → parsing (header patterns) → API route (extraction + logic) → step-mapping (UI controls) → import-view (state + payload) → step-results (display)
