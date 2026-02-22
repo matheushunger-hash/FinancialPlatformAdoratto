@@ -400,3 +400,32 @@ The `pg` driver does NOT work with Supabase's connection pooler (port 6543). It 
 - Card config array pattern: `CARD_CONFIGS: CardConfig[]` with `key`, `icon`, `borderColor`, `iconColor` — data-driven rendering via `.map()`, easy to extend
 - Skeleton cards: same grid layout as real cards (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-4`) with `Skeleton` components matching the content dimensions
 - Server Component page + Client Component cards: page handles metadata/layout, client component handles data fetching and interactivity
+
+### 2026-02-22 — ADR-015: Gráficos do Dashboard — CLOSED
+
+**What went well:**
+- 3 Recharts charts on the dashboard: stacked bar (daily payments by status), donut (status distribution), horizontal bar (top 10 suppliers by value)
+- Extended dashboard API with 3 Prisma `groupBy` queries running in parallel with the existing 5 aggregations (8 total via `Promise.all`)
+- `DashboardResponse extends DashboardKPIs` — backward-compatible type extension, adds `charts` field without breaking existing KPI structure
+- Pivot transform for daily data: flat `groupBy` rows reshaped into `{ day, PENDING, APPROVED, ... }` objects for Recharts stacked bars
+- Top suppliers resolved via batch `findMany` (collect IDs → single query) instead of N+1 individual lookups
+- Refactored `KPICards` from self-fetching to prop-driven — `DashboardView` orchestrator now owns the single fetch and distributes data to both `KPICards` and `DashboardCharts`
+- Dark mode support: `fill: "currentColor"` on Recharts axes, `className="stroke-border"` on CartesianGrid, custom tooltips with shadcn CSS variables (`bg-popover`, `text-popover-foreground`)
+- Empty state per chart ("Sem dados para este mês.") and skeleton loading matching the card layout
+- `npx tsc --noEmit` passes with zero errors, 8 files changed (2 new, 6 modified), 1 new dependency (`recharts`)
+
+**Mistakes caught — avoid next time:**
+1. **Always `.split("T")[0]` before appending `T12:00:00` for timezone safety** — the API returns `dueDate` as a full ISO string via `.toISOString()` (e.g. `"2026-02-20T00:00:00.000Z"`), not a date-only string. Concatenating `T12:00:00` onto a full ISO string produces an invalid date (`"...000ZT12:00:00"`) and causes `RangeError: Invalid time value`. The earlier #38 fix missed this because it assumed the value was date-only
+2. **`@db.Date` columns still arrive as full ISO strings in JSON** — even though Prisma stores them as date-only, `.toISOString()` in the API serialization adds the time portion. Never assume a date field is already in `YYYY-MM-DD` format on the client side
+
+**Patterns established:**
+- Orchestrator pattern for dashboard: `DashboardView` fetches `/api/dashboard` once, passes KPI data to `<KPICards>` and chart data to `<DashboardCharts>` — same pattern as `PayablesView`
+- `DashboardResponse extends DashboardKPIs` for additive API changes — existing consumers still work, new consumers access `charts` field
+- Prisma `groupBy` + pivot for chart data: `groupBy(["dueDate", "status"])` returns flat rows, post-process with `Map<day, DailyPaymentData>` to reshape into one object per day with all status columns
+- `getUTCDate()` for `@db.Date` fields — avoids timezone-shifting when extracting day numbers from Prisma Date columns
+- Recharts dark mode: `tick={{ fill: "currentColor" }}` on axes inherits from CSS color property; `CartesianGrid className="stroke-border"` uses shadcn border variable; custom tooltip components with `bg-popover`/`text-popover-foreground` classes
+- Status color map (hex for SVG fills): `PENDING=#f59e0b`, `APPROVED=#3b82f6`, `PAID=#22c55e`, `OVERDUE=#ef4444`, `REJECTED=#6b7280`, `CANCELLED=#9ca3af` — matches badge colors used elsewhere in the app
+- `formatCompactBRL` for chart Y-axis labels: values ≥1000 shown as `"1,5k"` to save space
+- Chart layout: stacked bar full-width, donut + horizontal bar side-by-side below (`grid-cols-1 lg:grid-cols-2`)
+- Supplier name resolution via batch lookup: collect `supplierId` array from `groupBy` results → single `findMany({ where: { id: { in: ids } } })` → `Map<id, name>` for O(1) lookups
+- Date string safety rule (UPDATED): always `.split("T")[0]` before appending `T12:00:00` — never assume a date value is already in `YYYY-MM-DD` format
