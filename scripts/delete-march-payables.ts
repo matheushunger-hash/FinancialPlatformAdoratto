@@ -44,7 +44,7 @@ async function main() {
   // Show summary grouped by supplier
   const bySupplier = new Map<string, { count: number; total: number }>();
   for (const p of payables) {
-    const key = p.supplier.name;
+    const key = p.supplier?.name ?? p.payee ?? "Desconhecido";
     const entry = bySupplier.get(key) || { count: 0, total: 0 };
     entry.count++;
     entry.total += Number(p.amount);

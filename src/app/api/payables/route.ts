@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
       OR: [
         { description: { contains: searchTerm, mode: "insensitive" } },
         { supplier: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { payee: { contains: searchTerm, mode: "insensitive" } },
         { invoiceNumber: { contains: searchTerm, mode: "insensitive" } },
         { notes: { contains: searchTerm, mode: "insensitive" } },
         { supplier: { document: { contains: searchTerm, mode: "insensitive" } } },
@@ -155,9 +156,10 @@ export async function GET(request: NextRequest) {
       payables: payables.map((p) => ({
         id: p.id,
         supplierId: p.supplierId,
-        supplierName: p.supplier.name,
-        supplierDocument: p.supplier.document,
-        supplierDocumentType: p.supplier.documentType as "CNPJ" | "CPF",
+        supplierName: p.supplier?.name ?? null,
+        supplierDocument: p.supplier?.document ?? null,
+        supplierDocumentType: (p.supplier?.documentType as "CNPJ" | "CPF") ?? null,
+        payee: p.payee ?? null,
         description: p.description,
         category: p.category,
         issueDate: p.issueDate.toISOString(),
@@ -223,15 +225,17 @@ export async function POST(request: NextRequest) {
 
   const data = parsed.data;
 
-  // Verify the supplier belongs to this tenant — prevents linking to another org's supplier
-  const supplier = await prisma.supplier.findFirst({
-    where: { id: data.supplierId, tenantId: ctx.tenantId },
-  });
-  if (!supplier) {
-    return NextResponse.json(
-      { error: "Fornecedor não encontrado" },
-      { status: 404 },
-    );
+  // Verify the supplier belongs to this tenant (only when supplierId is provided)
+  if (data.supplierId) {
+    const supplier = await prisma.supplier.findFirst({
+      where: { id: data.supplierId, tenantId: ctx.tenantId },
+    });
+    if (!supplier) {
+      return NextResponse.json(
+        { error: "Fornecedor não encontrado" },
+        { status: 404 },
+      );
+    }
   }
 
   // Convert currency strings to numbers for Prisma's Decimal type
@@ -244,7 +248,8 @@ export async function POST(request: NextRequest) {
       data: {
         userId: ctx.userId,
         tenantId: ctx.tenantId,
-        supplierId: data.supplierId,
+        supplierId: data.supplierId || null,
+        payee: data.payee?.trim() || null,
         description: data.description,
         category: data.category,
         amount: parsedAmount,
@@ -265,7 +270,8 @@ export async function POST(request: NextRequest) {
       {
         id: payable.id,
         supplierId: payable.supplierId,
-        supplierName: payable.supplier.name,
+        supplierName: payable.supplier?.name ?? null,
+        payee: payable.payee ?? null,
         description: payable.description,
         category: payable.category,
         issueDate: payable.issueDate.toISOString(),

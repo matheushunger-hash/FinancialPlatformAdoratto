@@ -47,7 +47,8 @@ export function parseCurrency(value: string): number {
 
 export const payableFormSchema = z
   .object({
-    supplierId: z.string().min(1, "Fornecedor é obrigatório"),
+    supplierId: z.string().optional().or(z.literal("")),
+    payee: z.string().max(100, "Máximo 100 caracteres").optional().or(z.literal("")),
     description: z
       .string()
       .min(1, "Descrição é obrigatória")
@@ -68,6 +69,17 @@ export const payableFormSchema = z
     tags: z.array(z.string()),
   })
   .superRefine((data, ctx) => {
+    // Cross-field: at least one of supplierId or payee must be filled
+    const hasSupplier = data.supplierId && data.supplierId.length > 0;
+    const hasPayee = data.payee && data.payee.trim().length > 0;
+    if (!hasSupplier && !hasPayee) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Informe um fornecedor ou beneficiário",
+        path: ["supplierId"],
+      });
+    }
+
     // Validate that amount is a positive number
     const parsedAmount = parseCurrency(data.amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {

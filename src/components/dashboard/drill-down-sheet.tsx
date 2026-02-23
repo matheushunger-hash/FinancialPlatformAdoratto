@@ -212,7 +212,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                 // (supplier name is already in the Sheet title)
                 const primaryText = isSupplierDrillDown
                   ? p.description
-                  : p.supplierName;
+                  : (p.supplierName ?? p.payee ?? "—");
                 // Secondary text: show description unless it matches the primary
                 const secondaryText =
                   !isSupplierDrillDown && p.description !== p.supplierName
@@ -226,7 +226,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                   >
                     {/* Top row: name/description + amount + status badge */}
                     <div className="flex items-center gap-3">
-                      {isSupplierDrillDown ? (
+                      {isSupplierDrillDown || !p.supplierId ? (
                         <span className="min-w-0 flex-1 truncate font-medium" title={primaryText}>
                           {primaryText}
                         </span>

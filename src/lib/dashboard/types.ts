@@ -46,7 +46,7 @@ export interface StatusDistribution {
 
 // One bar in the top-10 horizontal bar chart
 export interface TopSupplier {
-  supplierId: string;
+  supplierId: string | null;
   supplierName: string;
   total: number; // Sum of payValue in R$
 }

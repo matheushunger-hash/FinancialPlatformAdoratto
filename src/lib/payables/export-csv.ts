@@ -96,11 +96,13 @@ export function exportPayablesToCSV(payables: PayableListItem[]): void {
   ];
 
   const rows = payables.map((p) => [
-    escapeCSV(p.supplierName),
+    escapeCSV(p.supplierName ?? p.payee ?? ""),
     escapeCSV(
-      p.supplierDocumentType === "CNPJ"
-        ? formatCNPJ(p.supplierDocument)
-        : formatCPF(p.supplierDocument),
+      p.supplierDocument && p.supplierDocumentType
+        ? (p.supplierDocumentType === "CNPJ"
+            ? formatCNPJ(p.supplierDocument)
+            : formatCPF(p.supplierDocument))
+        : "",
     ),
     escapeCSV(p.description),
     escapeCSV(p.category === "REVENDA" ? "Revenda" : "Despesa"),

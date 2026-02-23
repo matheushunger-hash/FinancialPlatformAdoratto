@@ -114,7 +114,7 @@ export async function POST(
       return NextResponse.json({
         id: updated.id,
         status: updated.status,
-        supplierName: updated.supplier.name,
+        supplierName: updated.supplier?.name ?? updated.payee ?? null,
         description: updated.description,
       });
     } catch (err) {
@@ -193,7 +193,7 @@ export async function POST(
     return NextResponse.json({
       id: updated.id,
       status: updated.status,
-      supplierName: updated.supplier.name,
+      supplierName: updated.supplier?.name ?? updated.payee ?? null,
       description: updated.description,
     });
   } catch (err) {

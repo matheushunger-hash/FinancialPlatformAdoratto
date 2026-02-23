@@ -302,7 +302,9 @@ export async function GET(request: NextRequest) {
     }));
 
     // ---- Top 10 suppliers — resolve names from IDs ----
-    const supplierIds = topSuppliersRaw.map((row) => row.supplierId);
+    const supplierIds = topSuppliersRaw
+      .map((row) => row.supplierId)
+      .filter(Boolean) as string[];
     const suppliers =
       supplierIds.length > 0
         ? await prisma.supplier.findMany({
@@ -314,7 +316,9 @@ export async function GET(request: NextRequest) {
 
     const topSuppliers = topSuppliersRaw.map((row) => ({
       supplierId: row.supplierId,
-      supplierName: nameMap.get(row.supplierId) ?? "Desconhecido",
+      supplierName: row.supplierId
+        ? (nameMap.get(row.supplierId) ?? "Desconhecido")
+        : "Pagamentos Avulsos",
       total: Number(row._sum.payValue ?? 0),
     }));
 

@@ -5,10 +5,11 @@ import type { AttachmentItem } from "@/lib/attachments/types";
 
 export interface PayableListItem {
   id: string;
-  supplierId: string;
-  supplierName: string; // Joined from supplier relation
-  supplierDocument: string; // Raw digits from supplier
-  supplierDocumentType: "CNPJ" | "CPF"; // For formatting
+  supplierId: string | null;
+  supplierName: string | null; // Joined from supplier relation
+  supplierDocument: string | null; // Raw digits from supplier
+  supplierDocumentType: "CNPJ" | "CPF" | null; // For formatting
+  payee: string | null; // Free-text payee name (when no formal supplier)
   description: string;
   category: "REVENDA" | "DESPESA";
   issueDate: string;

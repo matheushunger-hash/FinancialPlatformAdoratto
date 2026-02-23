@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,10 +46,11 @@ interface Supplier {
 interface SupplierComboboxProps {
   value: string;
   onChange: (value: string) => void;
+  onClear?: () => void;
   disabled?: boolean;
 }
 
-export function SupplierCombobox({ value, onChange, disabled }: SupplierComboboxProps) {
+export function SupplierCombobox({ value, onChange, onClear, disabled }: SupplierComboboxProps) {
   const [open, setOpen] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,19 +85,20 @@ export function SupplierCombobox({ value, onChange, disabled }: SupplierCombobox
   }
 
   return (
-    <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          disabled={disabled}
-          className="w-full justify-between font-normal"
-        >
-          {selected ? selected.name : "Selecionar fornecedor..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
+    <div className="flex gap-1">
+      <Popover open={disabled ? false : open} onOpenChange={disabled ? undefined : setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            variant="outline"
+            role="combobox"
+            aria-expanded={open}
+            disabled={disabled}
+            className="w-full justify-between font-normal"
+          >
+            {selected ? selected.name : "Selecionar fornecedor..."}
+            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          </Button>
+        </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
         <Command>
           <CommandInput
@@ -133,5 +135,19 @@ export function SupplierCombobox({ value, onChange, disabled }: SupplierCombobox
         </Command>
       </PopoverContent>
     </Popover>
+      {/* Clear button — shown when a supplier is selected and onClear is provided */}
+      {selected && onClear && !disabled && (
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          onClick={onClear}
+          title="Limpar fornecedor"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      )}
+    </div>
   );
 }

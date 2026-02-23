@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
       OR: [
         { description: { contains: searchTerm, mode: "insensitive" } },
         { supplier: { name: { contains: searchTerm, mode: "insensitive" } } },
+        { payee: { contains: searchTerm, mode: "insensitive" } },
         { invoiceNumber: { contains: searchTerm, mode: "insensitive" } },
         { notes: { contains: searchTerm, mode: "insensitive" } },
         { supplier: { document: { contains: searchTerm, mode: "insensitive" } } },
@@ -184,11 +185,13 @@ export async function GET(request: NextRequest) {
     ];
 
     const rows = payables.map((p) => [
-      escapeCSV(p.supplier.name),
+      escapeCSV(p.supplier?.name ?? p.payee ?? ""),
       escapeCSV(
-        p.supplier.documentType === "CNPJ"
-          ? formatCNPJ(p.supplier.document)
-          : formatCPF(p.supplier.document),
+        p.supplier
+          ? (p.supplier.documentType === "CNPJ"
+              ? formatCNPJ(p.supplier.document)
+              : formatCPF(p.supplier.document))
+          : "",
       ),
       escapeCSV(p.description),
       escapeCSV(p.category === "REVENDA" ? "Revenda" : "Despesa"),

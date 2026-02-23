@@ -109,6 +109,33 @@ export async function POST(request: NextRequest) {
     // the unique constraint will catch
   }
 
+  // --- Pattern matching for salary/tax payees ---
+  const SALARY_PATTERNS = /^(SALARIO|SALÁRIO|FERIAS|FÉRIAS|RESCIS[ÃA]O|13º?\s*SAL|ADIANTAMENTO)\b/i;
+  const TAX_KEYWORDS = ["FGTS", "INSS", "DAS", "ICMS ST", "SEFAZ"];
+
+  // Cache for tax supplier lookups (name prefix → supplierId)
+  const taxSupplierCache = new Map<string, string>();
+
+  async function findTaxSupplier(keyword: string): Promise<string | null> {
+    const cached = taxSupplierCache.get(keyword);
+    if (cached) return cached;
+
+    const supplier = await prisma.supplier.findFirst({
+      where: {
+        tenantId,
+        name: { startsWith: keyword, mode: "insensitive" },
+        active: true,
+      },
+      select: { id: true },
+    });
+
+    if (supplier) {
+      taxSupplierCache.set(keyword, supplier.id);
+      return supplier.id;
+    }
+    return null;
+  }
+
   // --- Helper: get a cell value from a row using the field map ---
   function getField(row: RawRow, field: TargetFieldKey): unknown {
     const sourceCol = fieldMap.get(field);
@@ -301,20 +328,46 @@ export async function POST(request: NextRequest) {
       const status = isPaid ? "PAID" : "PENDING";
       const paidAt = isPaid ? new Date() : null;
 
-      // Find or create supplier
+      // Determine supplier vs payee based on name patterns
       const rawDocument = getField(row, "document");
-      const supplier = await findOrCreateSupplier(supplierName, rawDocument);
-      if (supplier.created) suppliersCreatedCount++;
+      let resolvedSupplierId: string | null = null;
+      let resolvedPayee: string | null = null;
+
+      if (SALARY_PATTERNS.test(supplierName)) {
+        // Salary/HR payments → payee only, no supplier record
+        resolvedPayee = supplierName;
+      } else {
+        // Check if it's a tax payment
+        const taxKeyword = TAX_KEYWORDS.find((k) =>
+          supplierName.toUpperCase().startsWith(k),
+        );
+        if (taxKeyword) {
+          const taxSupplierId = await findTaxSupplier(taxKeyword);
+          if (taxSupplierId) {
+            resolvedSupplierId = taxSupplierId;
+          } else {
+            // No generic tax supplier found — fall through to normal flow
+            const supplier = await findOrCreateSupplier(supplierName, rawDocument);
+            if (supplier.created) suppliersCreatedCount++;
+            resolvedSupplierId = supplier.id;
+          }
+        } else {
+          // Normal flow — find or create supplier
+          const supplier = await findOrCreateSupplier(supplierName, rawDocument);
+          if (supplier.created) suppliersCreatedCount++;
+          resolvedSupplierId = supplier.id;
+        }
+      }
 
       const parsedDueDate = new Date(dueDate + "T12:00:00");
       const parsedIssueDate = new Date(issueDate + "T12:00:00");
 
       // Update mode: check for existing payable by supplier + amount + dueDate
-      if (updateExisting) {
+      if (updateExisting && resolvedSupplierId) {
         const existing = await prisma.payable.findFirst({
           where: {
             tenantId,
-            supplierId: supplier.id,
+            supplierId: resolvedSupplierId,
             amount,
             dueDate: parsedDueDate,
           },
@@ -336,7 +389,8 @@ export async function POST(request: NextRequest) {
         data: {
           userId: userId,
           tenantId: tenantId,
-          supplierId: supplier.id,
+          supplierId: resolvedSupplierId,
+          payee: resolvedPayee,
           description,
           amount,
           payValue,

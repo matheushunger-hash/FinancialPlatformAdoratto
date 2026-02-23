@@ -19,7 +19,10 @@
     "db:setup-storage": "npx tsx scripts/setup-storage.ts",
     "db:backfill-juros": "npx tsx scripts/backfill-juros-multa.ts",
     "db:backfill-dates": "npx tsx scripts/backfill-dates.ts",
-    "db:merge-suppliers": "npx tsx scripts/merge-suppliers.ts"
+    "db:merge-suppliers": "npx tsx scripts/merge-suppliers.ts",
+    "db:find-dupes": "npx tsx scripts/find-duplicate-suppliers.ts",
+    "db:create-tax-suppliers": "npx tsx scripts/create-tax-suppliers.ts",
+    "db:migrate-pendente-payables": "npx tsx scripts/migrate-pendente-payables.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

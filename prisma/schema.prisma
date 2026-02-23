@@ -153,7 +153,8 @@ model Payable {
   id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId        String          @map("user_id") @db.Uuid
   tenantId      String          @map("tenant_id") @db.Uuid
-  supplierId    String          @map("supplier_id") @db.Uuid
+  supplierId    String?         @map("supplier_id") @db.Uuid
+  payee         String?         @map("payee") // Free-text payee name (when no formal supplier)
   description   String
   amount        Decimal         @db.Decimal(12, 2) // Valor original
   payValue      Decimal         @map("pay_value") @db.Decimal(12, 2) // Valor a pagar
@@ -175,7 +176,7 @@ model Payable {
   // Relationships
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   tenant      Tenant       @relation(fields: [tenantId], references: [id])
-  supplier    Supplier     @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplier    Supplier?    @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   attachments Attachment[]
 
   // Indexes — each speeds up a different common query

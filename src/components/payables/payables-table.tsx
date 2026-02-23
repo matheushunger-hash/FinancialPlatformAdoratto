@@ -147,18 +147,25 @@ function buildColumns(
     ...(hideSupplierColumns
       ? []
       : [
-          // 1. Fornecedor (sortable, clickable link to supplier detail)
+          // 1. Fornecedor (sortable, clickable link to supplier detail — plain text for payee)
           columnHelper.accessor("supplierName", {
             id: "supplierName",
             header: "Fornecedor",
-            cell: (info: { getValue: () => string; row: { original: PayableListItem } }) => (
-              <Link
-                href={`/dashboard/fornecedores/${info.row.original.supplierId}`}
-                className="font-medium hover:underline"
-              >
-                {info.getValue()}
-              </Link>
-            ),
+            cell: (info: { getValue: () => string | null; row: { original: PayableListItem } }) => {
+              const row = info.row.original;
+              const displayName = info.getValue() ?? row.payee ?? "—";
+              if (row.supplierId) {
+                return (
+                  <Link
+                    href={`/dashboard/fornecedores/${row.supplierId}`}
+                    className="font-medium hover:underline"
+                  >
+                    {displayName}
+                  </Link>
+                );
+              }
+              return <span className="font-medium">{displayName}</span>;
+            },
             enableSorting: true,
           }),
 
@@ -166,8 +173,11 @@ function buildColumns(
           columnHelper.accessor("supplierDocument", {
             id: "supplierDocument",
             header: "CNPJ/CPF",
-            cell: (info: { getValue: () => string; row: { original: PayableListItem } }) => {
+            cell: (info: { getValue: () => string | null; row: { original: PayableListItem } }) => {
               const row = info.row.original;
+              if (!row.supplierDocument || !row.supplierDocumentType) {
+                return <span className="text-muted-foreground">—</span>;
+              }
               const formatted =
                 row.supplierDocumentType === "CNPJ"
                   ? formatCNPJ(row.supplierDocument)

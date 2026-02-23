@@ -31,6 +31,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -119,7 +120,8 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
     resolver: zodResolver(payableFormSchema),
     defaultValues: isEditing
       ? {
-          supplierId: payable.supplierId,
+          supplierId: payable.supplierId ?? "",
+          payee: payable.payee ?? "",
           description: payable.description,
           category: payable.category as "REVENDA" | "DESPESA",
           issueDate: payable.issueDate.split("T")[0],
@@ -133,6 +135,7 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
         }
       : {
           supplierId: "",
+          payee: "",
           description: "",
           category: undefined,
           issueDate: "",
@@ -295,6 +298,13 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
             Dados Principais
           </legend>
 
+          {/* Helper text — supplier OR payee */}
+          {!isEditing && (
+            <p className="text-sm text-muted-foreground">
+              Selecione um fornecedor <strong>ou</strong> informe um beneficiário
+            </p>
+          )}
+
           {/* Supplier combobox */}
           <FormField
             control={form.control}
@@ -304,11 +314,40 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
                 <FormLabel>Fornecedor</FormLabel>
                 <FormControl>
                   <SupplierCombobox
-                    value={field.value}
-                    onChange={field.onChange}
+                    value={field.value ?? ""}
+                    onChange={(val) => {
+                      field.onChange(val);
+                      // Clear payee when a supplier is selected
+                      if (val) form.setValue("payee", "");
+                    }}
+                    onClear={() => {
+                      field.onChange("");
+                    }}
                     disabled={isEditing}
                   />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Payee — free-text input for when there's no formal supplier */}
+          <FormField
+            control={form.control}
+            name="payee"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Beneficiário</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Ex: Salário - Matheus, Férias - Gabriel"
+                    disabled={isEditing || !!form.watch("supplierId")}
+                    {...field}
+                  />
+                </FormControl>
+                <FormDescription>
+                  Informe quando não houver fornecedor cadastrado
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
