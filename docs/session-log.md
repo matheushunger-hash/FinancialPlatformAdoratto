@@ -5,6 +5,62 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #78: Overdue Payments Monitor + Segurado Date Fix — CLOSED
+
+**What was built:**
+- `daysOverdue` computed field added to both payables list and detail API routes — calculated server-side as `Math.floor((today - dueDate) / 86_400_000)` for PENDING/APPROVED payables with past due dates
+- "Dias Vencidos" color-coded column in payables table — yellow (0-30d), orange (31-60d), red (61-90d), dark red (90+d)
+- "Vencidos" filter pill changed from `status: "OVERDUE"` to compound `overdue: true` filter (status IN PENDING/APPROVED + dueDate < today)
+- `daysOverdue` added to `SORT_MAP` with reversed direction (most overdue = oldest dueDate = ASC)
+- Dashboard aging section: 3 KPI cards (avg days overdue, juros/multa exposure, critical 90+ count) + horizontal bar chart with 4 aging brackets + drill-down on click
+- `AgingBracket` and `AgingOverview` types added to dashboard types
+- `DrillDownFilter` extended with `overdue?: boolean` for aging bracket drill-downs
+- Aging overview is always-live (not period-filtered), computed from a single Prisma query with in-memory bucket aggregation
+
+**Data fix — segurado dates:**
+- Discovered that 596 spreadsheet rows had "segurado DD/MM" in the Obs column indicating the actual expiry date, but import only used the original "Data" due date
+- Example: OBRA PRIMA R$7,484.58 had dueDate 2026-02-23 (from "Data" column) but actually expired 2025-12-01 (from "segurado 01/12")
+- Script `fix-segurado-dates.ts` reads the spreadsheet, parses segurado dates, matches by supplier CNPJ + payValue + dueDate, updates the dueDate
+- CNPJ format mismatch caught: spreadsheet formatted (`06.136.910/0003-44`) vs DB digits-only (`06136910000344`) — `stripDocument()` fix
+- 662 payables updated (398 PENDING, 264 PAID), 319 now correctly show as overdue totaling R$603,583.27
+
+**Files changed (12 modified, 1 new + 2 scripts):**
+- `src/lib/payables/types.ts` — added `daysOverdue` to PayableListItem, `overdue` to PayableFilters
+- `src/lib/dashboard/types.ts` — added AgingBracket, AgingOverview, extended DrillDownFilter + DashboardResponse
+- `src/app/api/payables/route.ts` — overdue filter, daysOverdue computed field, sort map entry
+- `src/app/api/payables/[id]/route.ts` — daysOverdue in GET + PATCH responses
+- `src/app/api/dashboard/route.ts` — aging queries + bracket computation
+- `src/components/payables/payables-filters.tsx` — "Vencidos" pill uses compound overdue filter
+- `src/components/payables/payables-table.tsx` — "Dias Vencidos" color-coded column
+- `src/components/payables/payables-view.tsx` — pass overdue filter to API
+- `src/components/dashboard/aging-cards.tsx` — **NEW** 3 KPI cards for aging overview
+- `src/components/dashboard/dashboard-charts.tsx` — aging bracket bar chart with drill-down
+- `src/components/dashboard/dashboard-view.tsx` — AgingCards section + pass brackets to charts
+- `src/components/dashboard/drill-down-sheet.tsx` — pass overdue param
+- `scripts/fix-segurado-dates.ts` — data correction script (dry-run + --apply)
+- `scripts/delete-march-payables.ts` — one-time cleanup script
+
+---
+
+### 2026-02-22 — Issue #77: Import fails — Prisma client doesn't recognize jurosMulta — CLOSED
+
+**What happened:**
+- After Issue #52 added the `jurosMulta` field to `schema.prisma` and the import API route, importing a new spreadsheet failed with `Unknown argument 'jurosMulta'`
+- The Prisma client in `node_modules/` was stale — it was generated before the `jurosMulta` field existed
+- Fix: `npx prisma generate` + restart the dev server
+
+**No code changes** — purely operational fix. The field was already in the schema, the API route already used it, the generated client just needed to be rebuilt.
+
+**Also in this session:**
+- Ran `npm run db:backfill-juros` to populate `jurosMulta` for 930 existing payables (231 had non-zero values, 699 set to 0)
+- Confirmed data persisted correctly via direct SQL query
+
+**Lessons reinforced:**
+- After ANY schema change (`schema.prisma`), always run `prisma generate` AND restart the dev server — the Prisma singleton caches the old client in memory
+- This is already documented in CLAUDE.md hard-won rules but was missed during the #52 ship workflow
+
+---
+
 ### 2026-02-22 — Issue #54: Timezone Date Shift (Two Fixes) — CLOSED
 
 **What was built:**

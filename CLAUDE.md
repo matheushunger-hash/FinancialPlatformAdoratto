@@ -216,7 +216,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor)
 
 Full session history: `docs/session-log.md`
 
@@ -230,3 +230,44 @@ Full session history: `docs/session-log.md`
 - "Ver todos" link pattern: Sheet footer links to the full page (`/contas-a-pagar?filters...`) with pre-applied URL params via `URLSearchParams`
 - Smart column hiding in drill-down: supplier drilldowns show description as primary text (supplier already in Sheet title), hide secondary text when it matches primary
 - Orchestrator drill-down state: `useState<DrillDownFilter | null>(null)` — null = closed, non-null = open with those filters
+
+### 2026-02-22 — Issue #78: Overdue Payments Monitor + Segurado Date Fix — CLOSED
+
+**What went well:**
+- Implemented full overdue monitoring: `daysOverdue` computed field in API, color-coded "Dias Vencidos" table column, compound "Vencidos" filter pill, dashboard aging section (3 KPI cards + horizontal bar chart with drill-down)
+- Fixed the "Vencidos" filter pill — was using `status: "OVERDUE"` (almost no matches) → changed to `overdue: true` compound filter (status IN PENDING/APPROVED + dueDate < today)
+- `daysOverdue` sort maps to `dueDate` with reversed direction — clever trick since most overdue = oldest dueDate
+- Aging overview queries are always-live (not period-filtered) — separate from period-scoped dashboard data
+- Data fix script corrected 662 payable due dates from spreadsheet "segurado DD/MM" annotations — 398 PENDING payables now correctly show as overdue
+
+**Mistakes caught — avoid next time:**
+1. `PayableDetail extends PayableListItem` — when adding a field to ListItem, the detail route must also include it
+2. CNPJ format mismatch: spreadsheet has formatted (`06.136.910/0003-44`), DB stores digits-only (`06136910000344`) — always strip formatting before matching
+3. Shell escaping: `prisma.$disconnect()` in inline bash `-e` scripts breaks — use script files instead
+
+**Patterns established:**
+- Computed API field recipe (no DB column): compute in response mapping, add to types, add to SORT_MAP with inverted sort direction
+- Compound overdue filter: `status IN (PENDING, APPROVED) AND dueDate < today` — more reliable than a dedicated OVERDUE status
+- Aging brackets: compute in-memory from a single overdue query, serialize `Infinity` as `9999` for JSON
+- `stripDocument()`: always strip CNPJ/CPF formatting before DB lookups — `doc.replace(/[.\-/]/g, "")`
+- Data correction scripts: dry-run by default, `--apply` flag for execution, match by supplier CNPJ + payValue + dueDate
+
+### 2026-02-22 — Issue #52: Auto-Calculate Juros/Multa — CLOSED
+
+**What went well:**
+- Added `jurosMulta` Decimal column to the Payable model, computed server-side as `max(0, payValue - amount)` on every create/update/import
+- Formula applied consistently across all 3 entry points: form POST, form PATCH, and spreadsheet import (both create and update-existing modes)
+- Switched the table column from `columnHelper.display()` (client-side computation, not sortable) to `columnHelper.accessor("jurosMulta")` (data-driven, now sortable)
+- Added `jurosMulta` to the `SORT_MAP` whitelist so clicking the column header sorts server-side
+- Backfill script successfully processed all 930 existing payables — 231 had juros/multa values, 699 set to 0
+- Column ID renamed from `"interest"` to `"jurosMulta"` throughout (COLUMN_CLASSES, right-alignment checks) for consistency with the data field
+- `npx tsc --noEmit` passes with zero errors, 8 files changed (7 modified, 1 new), 0 new dependencies
+
+**Mistakes caught — avoid next time:**
+1. No new mistakes in this implementation — the plan was detailed and all steps worked on first attempt
+
+**Patterns established:**
+- Computed Decimal column recipe: schema column (nullable + default 0) → compute in all write paths (POST/PATCH/import) → include in all read paths (GET list + GET detail) → switch table from `display()` to `accessor()` → add to SORT_MAP → backfill script
+- `display()` vs `accessor()` in TanStack Table: `display()` columns have no underlying data and can't sort — switch to `accessor()` when the value is stored in the database
+- Backfill scripts: query all records, compute value, update each row — use `Math.round(value * 100) / 100` to avoid floating point precision issues with currency
+- Nullable Decimal serialization: `p.jurosMulta?.toString() ?? "0"` — safe pattern for optional Decimal fields in API responses
