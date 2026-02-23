@@ -5,6 +5,30 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #24 Phase 1: Recurring Payable Templates CRUD — CLOSED
+
+**What was built:**
+- `Frequency` enum (WEEKLY, MONTHLY, YEARLY) and `RecurringPayable` model in Prisma schema with relations to Tenant, User, Supplier
+- `src/lib/recurring/types.ts` — RecurringListItem, RecurringDetail, RecurringFilters, FREQUENCY_LABELS
+- `src/lib/recurring/validation.ts` — Zod schema with cross-field validation (MONTHLY requires dayOfMonth 1–28, endDate >= startDate)
+- `src/app/api/recurring/route.ts` — GET (list with search/sort/pagination/active filter) + POST (create)
+- `src/app/api/recurring/[id]/route.ts` — GET (detail) + PATCH (update, includes active toggle) + DELETE (ADMIN only)
+- `src/app/dashboard/recorrencias/page.tsx` — server component with user role fetch
+- `src/components/recurring/recurring-view.tsx` — orchestrator: state, fetch, debounced search, sort, active filter pills, Sheet/AlertDialog
+- `src/components/recurring/recurring-table.tsx` — TanStack table with sortable columns, Switch toggle for active/inactive, dropdown actions
+- `src/components/recurring/recurring-sheet.tsx` — dual-mode Sheet form (create/edit) with SupplierCombobox, frequency selector, date pickers, currency input, tag badges
+- `src/config/navigation.ts` — added "Recorrências" with Repeat icon
+- `src/components/ui/switch.tsx` — added shadcn Switch component for active toggle
+
+**Key decisions:**
+- `dayOfMonth` stored as string in Zod schema, parsed to number in API — avoids `z.coerce.number()` type inference conflict with zodResolver in Zod 4
+- `active` field added as `z.boolean().optional()` in schema — not rendered in form UI, but used by the toggle PATCH endpoint
+- Phase 2 (Vercel cron for auto-generating payables) deferred to a separate session
+
+**11 files changed (9 new, 2 modified). Zero new npm dependencies (only added shadcn Switch).**
+
+---
+
 ### 2026-02-22 — Issue #78: Overdue Payments Monitor + Segurado Date Fix — CLOSED
 
 **What was built:**

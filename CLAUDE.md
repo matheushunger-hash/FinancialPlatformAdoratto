@@ -216,7 +216,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD)
 
 Full session history: `docs/session-log.md`
 
@@ -230,6 +230,25 @@ Full session history: `docs/session-log.md`
 - "Ver todos" link pattern: Sheet footer links to the full page (`/contas-a-pagar?filters...`) with pre-applied URL params via `URLSearchParams`
 - Smart column hiding in drill-down: supplier drilldowns show description as primary text (supplier already in Sheet title), hide secondary text when it matches primary
 - Orchestrator drill-down state: `useState<DrillDownFilter | null>(null)` — null = closed, non-null = open with those filters
+
+### 2026-02-22 — Issue #24 Phase 1: Recurring Payable Templates CRUD — CLOSED
+
+**What went well:**
+- Full CRUD for recurring payable templates: schema, API, page, table, form — 11 files, zero new npm dependencies (only added shadcn Switch component)
+- Followed the exact same domain file structure as the payables domain: `src/lib/recurring/`, `src/app/api/recurring/`, `src/components/recurring/`
+- Reused existing patterns: orchestrator, SupplierCombobox, date picker, currency blur, tag toggle badges
+- `active` toggle via Switch component sends PATCH with `active: !current` alongside all other form fields
+
+**Mistakes caught — avoid next time:**
+1. **Stale Prisma client**: after `prisma db push` + `prisma generate`, MUST restart dev server — hot reload doesn't pick up new models. User saw "cannot read properties" until server was restarted
+2. **`z.coerce.number()` breaks `zodResolver` in Zod 4**: causes type inference mismatch with `@hookform/resolvers@5`. Fix: use `z.string()` and parse to number in the API route (same pattern as `amount`)
+3. **Missing `Switch` component**: shadcn doesn't include Switch by default — needed `npx shadcn add switch`
+
+**Patterns established:**
+- New domain recipe (11-file change): schema (model + enum + relations) → types → validation → API list+create → API detail+update+delete → page → orchestrator → table → form/sheet → navigation
+- String-based numeric form fields: store as string in Zod schema, parse with `parseInt()` in API route — avoids `z.coerce` type inference issues with zodResolver
+- Toggle via PATCH: include `active: z.boolean().optional()` in schema, spread in update data with `...(typeof data.active === "boolean" ? { active: data.active } : {})`
+- Quick filter pills (active/inactive): `Badge` with `variant="default"` (active) vs `variant="outline"` — same pattern as payables status pills
 
 ### 2026-02-22 — Issue #78: Overdue Payments Monitor + Segurado Date Fix — CLOSED
 
