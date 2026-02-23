@@ -5,6 +5,34 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-23 — Issue #63: AR Import Service — Persistence, Dedup, Audit — CLOSED
+
+**What was built:**
+- `src/lib/ar/errors.ts` — `DuplicateBatchError` custom error class with `existingBatchId` property. First custom error class in the codebase.
+- `src/lib/ar/importService.ts` — `persistBatch(parsed, userId, tenantId, filename)` service function with 3 phases:
+  1. Batch overlap detection: queries for existing `ImportBatch` with overlapping date range (same tenant), throws `DuplicateBatchError` if found
+  2. Transaction dedup: queries existing `CardTransaction.transactionId` values, filters out already-imported ones, adds them to rejected list with reason
+  3. Atomic insert: `prisma.$transaction()` creates ImportBatch + bulk-inserts CardTransactions via `createMany` + creates AuditLog entry. All-or-nothing.
+- Edge cases handled: empty accepted list (batch still created with `acceptedRows: 0`), empty date range (skip overlap check, fallback dates)
+
+**What went well:**
+- First use of `prisma.$transaction()` in the codebase — clean implementation
+- First custom error class — enables typed `instanceof` error handling
+- Zero TypeScript errors, zero deviations from plan
+- All Prisma queries include `tenantId` (tenant isolation verified)
+
+**Mistakes caught — avoid next time:**
+- None — clean implementation
+
+**Patterns established:**
+- `prisma.$transaction(async (tx) => { ... })` for atomic multi-table writes — tx client used for all queries inside the callback
+- Custom error classes for business logic errors: extend `Error`, set `name`, carry structured data (e.g., `existingBatchId`)
+- Date range overlap formula: `A.dateFrom <= B.dateTo AND A.dateTo >= B.dateFrom` — standard interval overlap check
+- Service function pattern: pure business logic, no HTTP concerns (no `NextResponse`, no `Request`) — API route calls service and handles responses
+- Dedup via Set: query existing IDs with `{ in: ids }`, build `Set<string>`, filter with `!existingSet.has(id)` — O(n) instead of O(n²)
+
+---
+
 ### 2026-02-23 — Issue #62: RPInfo Flex XLSX Parser — CLOSED
 
 **What was built:**
