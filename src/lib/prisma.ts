@@ -21,6 +21,7 @@ function createPrismaClient() {
   // because the pg driver doesn't work with Supabase's connection pooler
   // (it causes "Tenant or user not found" errors).
   const pool = new Pool({ connectionString: process.env.DIRECT_URL });
+  pool.on("connect", (client) => client.query("SET timezone = 'UTC'"));
   const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
