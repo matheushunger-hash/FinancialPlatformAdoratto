@@ -451,7 +451,13 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    return NextResponse.json(response);
+    // Cache dashboard data for 60s — data doesn't need to be real-time,
+    // and this eliminates repeat DB hits when refreshing the page.
+    return NextResponse.json(response, {
+      headers: {
+        "Cache-Control": "private, max-age=60, stale-while-revalidate=120",
+      },
+    });
   } catch (err) {
     console.error("[GET /api/dashboard] error:", err);
     const message = err instanceof Error ? err.message : "Erro interno do servidor";

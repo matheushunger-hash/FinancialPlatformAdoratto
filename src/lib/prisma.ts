@@ -20,7 +20,13 @@ function createPrismaClient() {
   // We use DIRECT_URL (port 5432) instead of DATABASE_URL (pooled, port 6543)
   // because the pg driver doesn't work with Supabase's connection pooler
   // (it causes "Tenant or user not found" errors).
-  const pool = new Pool({ connectionString: process.env.DIRECT_URL });
+  // In serverless (Vercel), each function instance gets its own pool.
+  // Default max=10 is too many — keep it small to avoid exhausting
+  // Supabase's connection limit across concurrent Lambda instances.
+  const pool = new Pool({
+    connectionString: process.env.DIRECT_URL,
+    max: process.env.VERCEL ? 3 : 10,
+  });
   pool.on("connect", (client) => client.query("SET timezone = 'UTC'"));
   const adapter = new PrismaPg(pool);
 
