@@ -6,12 +6,20 @@ import { supplierFormSchema, stripDocument } from "@/lib/suppliers/validation";
 import type { SuppliersListResponse } from "@/lib/suppliers/types";
 
 // =============================================================================
-// GET /api/suppliers — List suppliers with pagination and search
+// GET /api/suppliers — List suppliers with pagination, search, and sorting
 // =============================================================================
-// Query params: page (default 1), pageSize (default 10), search (optional)
+// Query params: page, pageSize, search, sort, order
 // Search looks across name, tradeName (case-insensitive), and document (digits).
 // Returns all supplier fields so the UI doesn't need a second fetch for editing.
 // =============================================================================
+
+// Whitelist of sortable columns — prevents sort injection
+const SORT_MAP: Record<string, (ord: "asc" | "desc") => Prisma.SupplierOrderByWithRelationInput> = {
+  name: (ord) => ({ name: ord }),
+  document: (ord) => ({ document: ord }),
+  active: (ord) => ({ active: ord }),
+  createdAt: (ord) => ({ createdAt: ord }),
+};
 
 export async function GET(request: NextRequest) {
   // 1. Authenticate — returns userId, tenantId, and role in one call
@@ -25,6 +33,9 @@ export async function GET(request: NextRequest) {
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(searchParams.get("pageSize")) || 10));
   const search = searchParams.get("search")?.trim() || "";
+  const sortKey = searchParams.get("sort") || "name";
+  const orderParam = searchParams.get("order") === "desc" ? "desc" : "asc";
+  const orderBy = SORT_MAP[sortKey]?.(orderParam) ?? { name: "asc" as const };
 
   // 3. Build the WHERE clause for filtering
   // Always search document as text (for "PENDENTE-001" placeholders).
@@ -52,7 +63,7 @@ export async function GET(request: NextRequest) {
     prisma.supplier.count({ where }),
     prisma.supplier.findMany({
       where,
-      orderBy: { name: "asc" },
+      orderBy,
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

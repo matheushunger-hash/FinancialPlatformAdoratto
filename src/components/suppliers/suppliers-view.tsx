@@ -32,6 +32,8 @@ export function SuppliersView() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState("name");
+  const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<SupplierListItem | null>(null);
@@ -59,6 +61,8 @@ export function SuppliersView() {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: "10",
+        sort,
+        order,
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
 
@@ -74,13 +78,23 @@ export function SuppliersView() {
     } finally {
       setLoading(false);
     }
-  }, [page, debouncedSearch]);
+  }, [page, debouncedSearch, sort, order]);
 
   useEffect(() => {
     fetchSuppliers();
   }, [fetchSuppliers]);
 
   // --- Handlers passed to child components ---
+
+  function handleSortChange(column: string) {
+    if (column === sort) {
+      setOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSort(column);
+      setOrder("asc");
+    }
+    setPage(1);
+  }
 
   function handleNew() {
     setEditingSupplier(null);
@@ -145,6 +159,9 @@ export function SuppliersView() {
       <SuppliersTable
         suppliers={suppliers}
         loading={loading}
+        sort={sort}
+        order={order}
+        onSortChange={handleSortChange}
         onEdit={handleEdit}
         onToggleActive={handleToggleActive}
       />
