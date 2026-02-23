@@ -5,6 +5,34 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-23 — Issue #61: Add Prisma Schema Models for AR Module — CLOSED
+
+**What was built:**
+- `TransactionStatus` enum: PENDING, CONFIRMED, DIVERGENT, OVERDUE, CANCELLED
+- `ImportBatch` model: tracks RPInfo spreadsheet imports (filename, row counts, gross/net totals, date range)
+- `CardTransaction` model: individual card transactions with brand, acquirer, amounts, fees, installments, status. `transactionId` unique per tenant via `@@unique([tenantId, transactionId])`
+- `PaymentReceipt` model: records payment receipt with divergence tracking. Uses `registeredById` (not `userId`) for semantic clarity
+- `AuditLog` model: generic change tracking with before/after JSON snapshots, indexed by `(entityType, entityId)`
+- Reverse relations added to `User` (importBatches, paymentReceipts, auditLogs) and `Tenant` (importBatches, cardTransactions, paymentReceipts, auditLogs)
+
+**What went well:**
+- Schema validated on first try, `prisma db push` succeeded without data loss warnings
+- Zero TypeScript errors, zero deviations from plan
+- Followed all existing conventions exactly: UUID PKs with `dbgenerated()`, `@map("snake_case")`, `@db.Timestamptz`, `@db.Date`, `@db.Decimal(12,2)`
+
+**Mistakes caught — avoid next time:**
+- None — the plan was detailed and all steps worked on first attempt
+
+**Patterns established:**
+- AR module schema follows same conventions as AP module: tenant isolation, UUID PKs, `@map` snake_case, `@db.Date` for date-only columns
+- `registeredById` instead of `userId` when the semantic is different from "who created the record"
+- Immutable event records (CardTransaction, AuditLog) omit `updatedAt` — only `createdAt`
+- `feePct` uses `@db.Decimal(6, 4)` for percentage precision vs `@db.Decimal(12, 2)` for currency
+
+**1 file modified (prisma/schema.prisma — 121 lines added). Zero new dependencies.**
+
+---
+
 ### 2026-02-22 — Issue #53: Unify Suppliers Table with TanStack — CLOSED
 
 **What was built:**
