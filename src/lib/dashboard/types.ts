@@ -56,15 +56,40 @@ export interface DrillDownFilter {
   title: string; // Sheet header, e.g. "Pagamentos — 15/02 (Pendente)"
   supplierId?: string; // for supplier drill-down
   status?: string; // for stacked bar drill-down
+  overdue?: boolean; // for aging bracket drill-down (PENDING/APPROVED + past due)
   dueDateFrom: string; // ISO date "YYYY-MM-DD"
   dueDateTo: string; // ISO date "YYYY-MM-DD"
 }
 
-// Full API response — extends KPIs with chart data
+// =============================================================================
+// Aging Overview Types (#78)
+// =============================================================================
+
+// One bar in the aging bracket horizontal bar chart
+export interface AgingBracket {
+  label: string; // "0–30 dias", "31–60 dias", etc.
+  key: string; // "0-30", "31-60", "61-90", "90+"
+  min: number; // Lower bound in days (inclusive)
+  max: number; // Upper bound in days (inclusive, Infinity for 90+)
+  count: number;
+  value: number; // Sum in R$
+  color: string; // Hex color for the chart bar
+}
+
+// Summary of overdue payables aging — always-live (not period-filtered)
+export interface AgingOverview {
+  avgDaysOverdue: number; // Average aging across all overdue payables
+  interestExposure: number; // Sum of jurosMulta on overdue payables
+  criticalCount: number; // Count of payables 90+ days overdue
+  agingBrackets: AgingBracket[];
+}
+
+// Full API response — extends KPIs with chart data + aging overview
 export interface DashboardResponse extends DashboardKPIs {
   charts: {
     dailyPayments: DailyPaymentData[];
     statusDistribution: StatusDistribution[];
     topSuppliers: TopSupplier[];
   };
+  agingOverview: AgingOverview;
 }

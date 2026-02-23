@@ -88,6 +88,16 @@ export async function GET(
       amount: payable.amount.toString(),
       payValue: payable.payValue.toString(),
       jurosMulta: payable.jurosMulta?.toString() ?? "0",
+      daysOverdue: (() => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        return (
+          ["PENDING", "APPROVED", "OVERDUE"].includes(payable.status) &&
+          payable.dueDate.getTime() < now.getTime()
+        )
+          ? Math.floor((now.getTime() - payable.dueDate.getTime()) / 86_400_000)
+          : null;
+      })(),
       paymentMethod: payable.paymentMethod,
       invoiceNumber: payable.invoiceNumber,
       notes: payable.notes,
@@ -250,6 +260,16 @@ export async function PATCH(
       amount: updated.amount.toString(),
       payValue: updated.payValue.toString(),
       jurosMulta: updated.jurosMulta?.toString() ?? "0",
+      daysOverdue: (() => {
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        return (
+          ["PENDING", "APPROVED", "OVERDUE"].includes(updated.status) &&
+          updated.dueDate.getTime() < now.getTime()
+        )
+          ? Math.floor((now.getTime() - updated.dueDate.getTime()) / 86_400_000)
+          : null;
+      })(),
       paymentMethod: updated.paymentMethod,
       invoiceNumber: updated.invoiceNumber,
       notes: updated.notes,

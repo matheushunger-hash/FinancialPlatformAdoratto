@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KPICards } from "@/components/dashboard/kpi-cards";
+import { AgingCards } from "@/components/dashboard/aging-cards";
 import { DashboardCharts } from "@/components/dashboard/dashboard-charts";
 import { DrillDownSheet } from "@/components/dashboard/drill-down-sheet";
 import { PeriodSelector } from "@/components/dashboard/period-selector";
@@ -85,6 +86,12 @@ export function DashboardView() {
         keys={["totalPayable", "overdue", "dueSoon"]}
       />
 
+      {/* Aging breakdown — always-live, current overdue state (#78) */}
+      <AgingCards
+        data={data?.agingOverview ?? null}
+        loading={loading}
+      />
+
       {/* Period selector — visually separates frozen KPIs from filtered content */}
       <PeriodSelector from={from} to={to} onChange={handlePeriodChange} />
 
@@ -97,6 +104,7 @@ export function DashboardView() {
       />
       <DashboardCharts
         charts={data?.charts ?? null}
+        agingBrackets={data?.agingOverview?.agingBrackets}
         loading={loading}
         from={from}
         to={to}

@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { formatCNPJ, formatCPF } from "@/lib/suppliers/validation";
 import { getAvailableActions } from "@/lib/payables/transitions";
 import { EDITABLE_STATUSES, STATUS_CONFIG, type PayableListItem } from "@/lib/payables/types";
@@ -266,7 +267,30 @@ function buildColumns(
       enableSorting: true,
     }),
 
-    // 9. Tags (not sortable, hidden on mobile)
+    // 9. Dias Vencidos — color-coded aging (sortable, hidden on small screens)
+    columnHelper.accessor("daysOverdue", {
+      id: "daysOverdue",
+      header: "Dias Vencidos",
+      cell: ({ getValue }) => {
+        const days = getValue();
+        if (days === null || days === undefined) {
+          return <span className="text-muted-foreground">—</span>;
+        }
+        // Color by aging bracket
+        let colorClass = "text-yellow-600 dark:text-yellow-400"; // 0-30
+        if (days > 90) colorClass = "text-red-900 dark:text-red-300"; // 90+
+        else if (days > 60) colorClass = "text-red-600 dark:text-red-400"; // 61-90
+        else if (days > 30) colorClass = "text-orange-600 dark:text-orange-400"; // 31-60
+        return (
+          <span className={cn("font-medium tabular-nums", colorClass)}>
+            {days}d
+          </span>
+        );
+      },
+      enableSorting: true,
+    }),
+
+    // 10. Tags (not sortable, hidden on mobile)
     columnHelper.accessor("tags", {
       id: "tags",
       header: "Tags",
@@ -362,6 +386,7 @@ function buildColumns(
 const COLUMN_CLASSES: Record<string, string> = {
   supplierDocument: "hidden lg:table-cell",
   jurosMulta: "hidden lg:table-cell",
+  daysOverdue: "hidden md:table-cell",
   tags: "hidden lg:table-cell",
 };
 
@@ -419,7 +444,7 @@ export function PayablesTable({
                   <TableHead
                     key={header.id}
                     className={`${cellClass} ${
-                      header.id === "amount" || header.id === "payValue" || header.id === "jurosMulta"
+                      header.id === "amount" || header.id === "payValue" || header.id === "jurosMulta" || header.id === "daysOverdue"
                         ? "text-right"
                         : ""
                     }`}
@@ -498,7 +523,8 @@ export function PayablesTable({
                       className={`${cellClass} ${
                         cell.column.id === "amount" ||
                         cell.column.id === "payValue" ||
-                        cell.column.id === "jurosMulta"
+                        cell.column.id === "jurosMulta" ||
+                        cell.column.id === "daysOverdue"
                           ? "text-right"
                           : ""
                       }`}

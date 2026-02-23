@@ -44,6 +44,7 @@ function buildPayablesUrl(filter: DrillDownFilter): string {
   const params = new URLSearchParams();
   if (filter.supplierId) params.set("supplierId", filter.supplierId);
   if (filter.status) params.set("status", filter.status);
+  if (filter.overdue) params.set("overdue", "true");
   params.set("dueDateFrom", filter.dueDateFrom);
   params.set("dueDateTo", filter.dueDateTo);
   return `/contas-a-pagar?${params.toString()}`;
@@ -80,6 +81,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
       const params = new URLSearchParams();
       if (filter.supplierId) params.set("supplierId", filter.supplierId);
       if (filter.status) params.set("status", filter.status);
+      if (filter.overdue) params.set("overdue", "true");
       params.set("dueDateFrom", filter.dueDateFrom);
       params.set("dueDateTo", filter.dueDateTo);
       params.set("page", String(pageToFetch));

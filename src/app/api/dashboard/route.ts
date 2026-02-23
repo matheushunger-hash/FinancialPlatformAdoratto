@@ -348,6 +348,45 @@ export async function GET(request: NextRequest) {
     const dueDelta = computeDelta(dueInPeriodValue, Number(prevDueInPeriod._sum.payValue ?? 0));
     const insuredDelta = computeDelta(insuredInPeriodValue, Number(prevInsured._sum.payValue ?? 0));
 
+    // ---- Aging overview (computed from overdue payables) ----
+    const overduePayables = await prisma.payable.findMany({
+      where: {
+        ...tenantScope,
+        status: { in: [...activeStatuses] },
+        dueDate: { lt: today },
+      },
+      select: { dueDate: true, payValue: true, jurosMulta: true },
+    });
+
+    const todayMs = today.getTime();
+    let totalAgingDays = 0;
+    let interestExposure = 0;
+    let criticalCount = 0;
+    const agingBrackets = [
+      { key: "0-30", label: "0–30 dias", min: 0, max: 30, count: 0, value: 0, color: "#F59E0B" },
+      { key: "31-60", label: "31–60 dias", min: 31, max: 60, count: 0, value: 0, color: "#F97316" },
+      { key: "61-90", label: "61–90 dias", min: 61, max: 90, count: 0, value: 0, color: "#EF4444" },
+      { key: "90+", label: "90+ dias", min: 91, max: Infinity, count: 0, value: 0, color: "#7F1D1D" },
+    ];
+
+    for (const p of overduePayables) {
+      const days = Math.floor((todayMs - p.dueDate.getTime()) / 86_400_000);
+      const val = Number(p.payValue ?? 0);
+      totalAgingDays += days;
+      interestExposure += Number(p.jurosMulta ?? 0);
+      if (days > 90) criticalCount++;
+      const bracket = agingBrackets.find((b) => days >= b.min && days <= b.max);
+      if (bracket) {
+        bracket.count++;
+        bracket.value += val;
+      }
+    }
+
+    const avgDaysOverdue =
+      overduePayables.length > 0
+        ? Math.round(totalAgingDays / overduePayables.length)
+        : 0;
+
     // ---- Build response ----
     const response: DashboardResponse = {
       totalPayable: {
@@ -391,6 +430,20 @@ export async function GET(request: NextRequest) {
         dailyPayments,
         statusDistribution,
         topSuppliers,
+      },
+      agingOverview: {
+        avgDaysOverdue,
+        interestExposure: Math.round(interestExposure * 100) / 100,
+        criticalCount,
+        agingBrackets: agingBrackets.map((b) => ({
+          key: b.key,
+          label: b.label,
+          min: b.min,
+          max: b.max === Infinity ? 9999 : b.max,
+          count: b.count,
+          value: Math.round(b.value * 100) / 100,
+          color: b.color,
+        })),
       },
     };
 

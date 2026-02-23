@@ -22,6 +22,9 @@ const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
   payValue: (order) => ({ payValue: order }),
   jurosMulta: (order) => ({ jurosMulta: order }),
   status: (order) => ({ status: order }),
+  // daysOverdue maps to dueDate with reversed direction:
+  // most overdue (highest days) = oldest due date = ASC
+  daysOverdue: (order) => ({ dueDate: order === "asc" ? "desc" : "asc" }),
 };
 
 // Whitelist of valid filter values — unknown values are silently ignored
@@ -113,6 +116,17 @@ export async function GET(request: NextRequest) {
     conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59.999Z") } });
   }
 
+  // Overdue compound filter — PENDING/APPROVED with past due date
+  const overdueParam = searchParams.get("overdue");
+  if (overdueParam === "true") {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    conditions.push({
+      status: { in: ["PENDING", "APPROVED"] },
+      dueDate: { lt: now },
+    });
+  }
+
   // Scope every query to the tenant — everyone in the org sees the same payables
   conditions.push({ tenantId: ctx.tenantId });
   const where = { AND: conditions };
@@ -131,6 +145,12 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    // Compute "today" once for daysOverdue calculation
+    const todayForAging = new Date();
+    todayForAging.setHours(0, 0, 0, 0);
+    const todayMs = todayForAging.getTime();
+    const OVERDUE_STATUSES = ["PENDING", "APPROVED", "OVERDUE"];
+
     const response: PayablesListResponse = {
       payables: payables.map((p) => ({
         id: p.id,
@@ -145,6 +165,10 @@ export async function GET(request: NextRequest) {
         amount: p.amount.toString(),
         payValue: p.payValue.toString(),
         jurosMulta: p.jurosMulta?.toString() ?? "0",
+        daysOverdue:
+          OVERDUE_STATUSES.includes(p.status) && p.dueDate.getTime() < todayMs
+            ? Math.floor((todayMs - p.dueDate.getTime()) / 86_400_000)
+            : null,
         paymentMethod: p.paymentMethod,
         invoiceNumber: p.invoiceNumber,
         notes: p.notes,

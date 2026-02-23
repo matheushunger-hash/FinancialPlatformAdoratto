@@ -16,6 +16,7 @@ export interface PayableListItem {
   amount: string; // Decimal serialized as string
   payValue: string;
   jurosMulta: string; // Decimal serialized as string (payValue - amount, min 0)
+  daysOverdue: number | null; // Computed: days past due for unpaid overdue payables, null otherwise
   paymentMethod: string;
   invoiceNumber: string | null;
   notes: string | null;
@@ -42,6 +43,7 @@ export interface PayableFilters {
     | "CHEQUE";
   dueDateFrom?: string; // yyyy-MM-dd
   dueDateTo?: string; // yyyy-MM-dd
+  overdue?: boolean; // Compound filter: PENDING/APPROVED with dueDate < today
 }
 
 // Extended detail for the edit form — includes metadata not in the list response.

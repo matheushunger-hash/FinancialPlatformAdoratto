@@ -11,12 +11,13 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell,
   Label,
+  Cell,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
+  AgingBracket,
   DailyPaymentData,
   DrillDownFilter,
   StatusDistribution,
@@ -163,6 +164,28 @@ function CustomSupplierTooltip({
   );
 }
 
+// -- Aging bracket tooltip --
+
+function CustomAgingTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: { payload: AgingBracket }[];
+}) {
+  if (!active || !payload?.length) return null;
+  const bracket = payload[0].payload;
+  return (
+    <div className={TOOLTIP_CLASS}>
+      <p className="mb-1 font-medium">{bracket.label}</p>
+      <p className="tabular-nums">{formatBRL(bracket.value)}</p>
+      <p className="text-xs opacity-75">
+        {bracket.count} título{bracket.count !== 1 ? "s" : ""}
+      </p>
+    </div>
+  );
+}
+
 // -- Empty state --
 
 function EmptyChart({ message }: { message: string }) {
@@ -220,13 +243,14 @@ interface DashboardChartsProps {
     statusDistribution: StatusDistribution[];
     topSuppliers: TopSupplier[];
   } | null;
+  agingBrackets?: AgingBracket[];
   loading: boolean;
   from?: string;
   to?: string;
   onDrillDown?: (filter: DrillDownFilter) => void;
 }
 
-export function DashboardCharts({ charts, loading, from, to, onDrillDown }: DashboardChartsProps) {
+export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDrillDown }: DashboardChartsProps) {
   if (loading || !charts) {
     return <ChartSkeleton />;
   }
@@ -450,6 +474,94 @@ export function DashboardCharts({ charts, loading, from, to, onDrillDown }: Dash
           </CardContent>
         </Card>
       </div>
+
+      {/* Chart 4 — Horizontal bar: aging brackets for overdue payables (#78) */}
+      {agingBrackets && agingBrackets.length > 0 && (
+        <Card className="rounded-xl shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">
+              Aging dos Títulos Vencidos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {agingBrackets.every((b) => b.count === 0) ? (
+              <EmptyChart message="Nenhum título vencido no momento." />
+            ) : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={agingBrackets}
+                  layout="vertical"
+                  margin={{ left: 20 }}
+                >
+                  <CartesianGrid
+                    className="stroke-border"
+                    strokeOpacity={0.5}
+                    horizontal={false}
+                  />
+                  <XAxis
+                    type="number"
+                    tick={tickStyle}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatCompactBRL}
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="label"
+                    tick={tickStyle}
+                    tickLine={false}
+                    axisLine={false}
+                    width={100}
+                  />
+                  <Tooltip content={<CustomAgingTooltip />} />
+                  <Bar
+                    dataKey="value"
+                    radius={[0, 4, 4, 0]}
+                    background={{ fill: "var(--color-muted)", radius: 4 }}
+                    cursor={onDrillDown ? "pointer" : undefined}
+                    onClick={(_data) => {
+                      if (!onDrillDown) return;
+                      const bracket = (
+                        _data as unknown as { payload: AgingBracket }
+                      ).payload;
+                      if (!bracket) return;
+
+                      // Convert aging bracket to date range for drill-down
+                      const todayStr = new Date().toISOString().split("T")[0];
+                      const todayMs = new Date(todayStr + "T12:00:00").getTime();
+                      const DAY_MS = 86_400_000;
+
+                      // "0-30" → dueDate between (today - 30 days) and yesterday
+                      const dueDateTo = new Date(
+                        todayMs - bracket.min * DAY_MS,
+                      )
+                        .toISOString()
+                        .split("T")[0];
+                      const dueDateFrom =
+                        bracket.key === "90+"
+                          ? "2020-01-01"
+                          : new Date(todayMs - bracket.max * DAY_MS)
+                              .toISOString()
+                              .split("T")[0];
+
+                      onDrillDown({
+                        title: `Vencidos — ${bracket.label}`,
+                        dueDateFrom,
+                        dueDateTo,
+                        overdue: true,
+                      });
+                    }}
+                  >
+                    {agingBrackets.map((bracket) => (
+                      <Cell key={bracket.key} fill={bracket.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

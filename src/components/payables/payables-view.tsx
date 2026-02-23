@@ -116,6 +116,7 @@ export function PayablesView({ userRole }: PayablesViewProps) {
       if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
       if (filters.dueDateFrom) params.set("dueDateFrom", filters.dueDateFrom);
       if (filters.dueDateTo) params.set("dueDateTo", filters.dueDateTo);
+      if (filters.overdue) params.set("overdue", "true");
 
       const res = await fetch(`/api/payables?${params}`);
       if (!res.ok) throw new Error("Erro ao carregar títulos");

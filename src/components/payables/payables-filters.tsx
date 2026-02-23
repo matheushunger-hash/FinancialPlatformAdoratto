@@ -35,15 +35,15 @@ interface PayablesFiltersProps {
   onFiltersChange: (filters: PayableFilters) => void;
 }
 
-// Quick-filter pills: each one sets status and/or tag.
-// "Todos" clears both but keeps advanced filters (category, payment, dates).
+// Quick-filter pills: each one sets status, tag, and/or overdue.
+// "Todos" clears all three but keeps advanced filters (category, payment, dates).
 const QUICK_FILTERS = [
-  { key: "all", label: "Todos", status: undefined, tag: undefined },
-  { key: "overdue", label: "Vencidos", status: "OVERDUE" as const, tag: undefined },
-  { key: "pending", label: "Pendentes", status: "PENDING" as const, tag: undefined },
-  { key: "approved", label: "Aprovados", status: "APPROVED" as const, tag: undefined },
-  { key: "paid", label: "Pagos", status: "PAID" as const, tag: undefined },
-  { key: "protestado", label: "Protestados", status: undefined, tag: "protestado" },
+  { key: "all", label: "Todos", status: undefined, tag: undefined, overdue: undefined },
+  { key: "overdue", label: "Vencidos", status: undefined, tag: undefined, overdue: true as const },
+  { key: "pending", label: "Pendentes", status: "PENDING" as const, tag: undefined, overdue: undefined },
+  { key: "approved", label: "Aprovados", status: "APPROVED" as const, tag: undefined, overdue: undefined },
+  { key: "paid", label: "Pagos", status: "PAID" as const, tag: undefined, overdue: undefined },
+  { key: "protestado", label: "Protestados", status: undefined, tag: "protestado", overdue: undefined },
 ] as const;
 
 // Payment method labels for the dropdown (display-friendly names)
@@ -63,12 +63,12 @@ export function PayablesFilters({
 }: PayablesFiltersProps) {
   // Determine which quick-filter pill is active
   function getActiveQuickFilter(): string {
+    if (filters.overdue) return "overdue";
     if (filters.tag === "protestado") return "protestado";
-    if (filters.status === "OVERDUE") return "overdue";
     if (filters.status === "PENDING") return "pending";
     if (filters.status === "APPROVED") return "approved";
     if (filters.status === "PAID") return "paid";
-    if (!filters.status && !filters.tag) return "all";
+    if (!filters.status && !filters.tag && !filters.overdue) return "all";
     return "";
   }
 
@@ -78,6 +78,7 @@ export function PayablesFilters({
   const hasAnyFilter =
     filters.status !== undefined ||
     filters.tag !== undefined ||
+    filters.overdue !== undefined ||
     filters.category !== undefined ||
     filters.paymentMethod !== undefined ||
     filters.dueDateFrom !== undefined ||
@@ -88,9 +89,10 @@ export function PayablesFilters({
   function handleQuickFilter(
     status: PayableFilters["status"],
     tag: string | undefined,
+    overdue: boolean | undefined,
   ) {
-    // Keep advanced filters, only replace status + tag
-    onFiltersChange({ ...filters, status, tag });
+    // Keep advanced filters, only replace status + tag + overdue
+    onFiltersChange({ ...filters, status, tag, overdue: overdue || undefined });
   }
 
   function handleCategoryChange(value: string) {
@@ -135,7 +137,7 @@ export function PayablesFilters({
             key={qf.key}
             variant={activeQuick === qf.key ? "default" : "outline"}
             className="cursor-pointer select-none"
-            onClick={() => handleQuickFilter(qf.status, qf.tag)}
+            onClick={() => handleQuickFilter(qf.status, qf.tag, qf.overdue)}
           >
             {qf.label}
           </Badge>
