@@ -216,7 +216,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #48 (Forward-Looking Date Presets)
 
 Full session history: `docs/session-log.md`
 

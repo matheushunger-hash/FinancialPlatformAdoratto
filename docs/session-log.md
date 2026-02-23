@@ -5,6 +5,22 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #48: Forward-Looking Date Presets — CLOSED
+
+**What was built:**
+- Added 2 forward-looking presets ("Próximos 7 dias", "Próximos 30 dias") to the dashboard's `PeriodSelector` date range filter bar
+- Uses the same `Date.setDate()` pattern as the existing backward presets — `today + 7` and `today + 30`
+- Active preset detection works automatically via existing string comparison logic — zero extra code needed
+
+**Key decisions:**
+- Single-file change in `src/components/dashboard/period-selector.tsx` — 11 lines added, 1 modified
+- Zero new dependencies, zero new files
+- Followed existing preset pattern exactly: compute dates → add entry to array → Badge auto-highlights
+
+**1 file modified. Zero new dependencies.**
+
+---
+
 ### 2026-02-22 — Issue #24 Phase 1: Recurring Payable Templates CRUD — CLOSED
 
 **What was built:**
