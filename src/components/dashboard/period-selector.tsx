@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 // =============================================================================
 // PeriodSelector — Date range picker with presets for the dashboard
 // =============================================================================
-// Two date pickers (De / Até) + 4 quick-preset buttons. Follows the same
+// Two date pickers (De / Até) + 6 quick-preset buttons. Follows the same
 // Popover + Calendar pattern used in payables-filters.tsx.
 // Stores dates as "YYYY-MM-DD" strings — the orchestrator passes them to the
 // API as query params.
@@ -53,11 +53,21 @@ function getPresets() {
   const last30From = new Date(now);
   last30From.setDate(now.getDate() - 29);
 
+  // Next 7 days: today → today + 7
+  const next7To = new Date(now);
+  next7To.setDate(now.getDate() + 7);
+
+  // Next 30 days: today → today + 30
+  const next30To = new Date(now);
+  next30To.setDate(now.getDate() + 30);
+
   return [
     { key: "this-month", label: "Este Mês", from: toISODate(thisMonthFrom), to: toISODate(thisMonthTo) },
     { key: "prev-month", label: "Mês Anterior", from: toISODate(prevMonthFrom), to: toISODate(prevMonthTo) },
     { key: "last-7", label: "Últimos 7 dias", from: toISODate(last7From), to: toISODate(now) },
     { key: "last-30", label: "Últimos 30 dias", from: toISODate(last30From), to: toISODate(now) },
+    { key: "next-7", label: "Próximos 7 dias", from: toISODate(now), to: toISODate(next7To) },
+    { key: "next-30", label: "Próximos 30 dias", from: toISODate(now), to: toISODate(next30To) },
   ];
 }
 
