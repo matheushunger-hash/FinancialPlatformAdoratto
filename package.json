@@ -18,7 +18,8 @@
     "db:backfill-tenant": "npx tsx scripts/backfill-tenant.ts",
     "db:setup-storage": "npx tsx scripts/setup-storage.ts",
     "db:backfill-juros": "npx tsx scripts/backfill-juros-multa.ts",
-    "db:backfill-dates": "npx tsx scripts/backfill-dates.ts"
+    "db:backfill-dates": "npx tsx scripts/backfill-dates.ts",
+    "db:merge-suppliers": "npx tsx scripts/merge-suppliers.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
