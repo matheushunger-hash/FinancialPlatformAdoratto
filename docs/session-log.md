@@ -5,6 +5,23 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-23 — Issue #79: Clickable Supplier Names — CLOSED
+
+**What was built:**
+- Supplier names across 4 tables now link to `/dashboard/fornecedores/{id}` via Next.js `<Link>`
+- Tables changed: suppliers-table, payables-table, recurring-table, drill-down-sheet
+- Subtle `hover:underline` styling — clickable without visual clutter
+- Drill-down sheet uses conditional link (only when primary text is supplier name, not in supplier drill-downs)
+
+**Mistakes caught:**
+1. Original plan missed the suppliers list table (`suppliers-table.tsx`) — the most obvious place to click a supplier name. User's screenshot revealed we were fixing the wrong tables. Always check the page the user is actually looking at.
+2. Fresh `git init` with no history caused a full-codebase initial commit. Had to `git reset --hard origin/main` and re-apply just the 4 file changes. Lesson: always `git log` before committing to verify the repo has history.
+
+**Patterns established:**
+- Clickable name recipe in TanStack tables: replace `<span className="font-medium">` with `<Link href={...} className="font-medium hover:underline">`, access row data via `info.row.original.fieldName`
+
+---
+
 ### 2026-02-23 — Issue #63: AR Import Service — Persistence, Dedup, Audit — CLOSED
 
 **What was built:**
