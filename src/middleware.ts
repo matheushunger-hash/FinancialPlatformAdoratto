@@ -6,7 +6,13 @@ import { updateSession } from "@/lib/supabase/middleware";
 // We use it to refresh the Supabase auth session automatically.
 
 export async function middleware(request: NextRequest) {
-  return await updateSession(request);
+  try {
+    return await updateSession(request);
+  } catch (err) {
+    console.error("[middleware] error:", err);
+    // Return a basic response instead of crashing — helps diagnose Vercel issues
+    return new Response("Internal Server Error", { status: 500 });
+  }
 }
 
 // Only run middleware on app routes — skip static files and images.
