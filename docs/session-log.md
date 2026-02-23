@@ -5,6 +5,32 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-22 — Issue #53: Unify Suppliers Table with TanStack — CLOSED
+
+**What was built:**
+- Converted `suppliers-table.tsx` from manual HTML `<Table>` to TanStack Table with `columnHelper`, `flexRender`, `COLUMN_CLASSES` responsive map
+- Added `SORT_MAP` whitelist to the Suppliers API (`name`, `document`, `active`, `createdAt`) with `sort`/`order` query params
+- Added sort/order state + `handleSortChange` handler to `suppliers-view.tsx` orchestrator
+- Supplier names changed from purple `<Link>` to plain `<span className="font-medium">` (matches payables pattern)
+- Action button changed from `variant="ghost"` to `variant="outline"` (matches payables)
+- Sortable column headers with `ArrowUp`/`ArrowDown`/`ArrowUpDown` indicators
+
+**What went well:**
+- Clean 3-file change following established patterns exactly — API SORT_MAP, orchestrator sort state, TanStack table
+- Zero TypeScript errors on first try
+- No deviations from the plan
+
+**Mistakes caught — avoid next time:**
+- None — the plan was specific and all steps worked on first attempt
+
+**Patterns reinforced:**
+- TanStack Table conversion recipe: API (SORT_MAP whitelist) → orchestrator (sort/order state + handler) → table (columnHelper + flexRender + COLUMN_CLASSES)
+- All tables in the app now use the same structure: TanStack Table with manual sorting/pagination, `rounded-md border` wrapper, skeleton rows inside table for loading
+
+**3 files modified. Zero new dependencies.**
+
+---
+
 ### 2026-02-22 — Issue #48: Forward-Looking Date Presets — CLOSED
 
 **What was built:**
