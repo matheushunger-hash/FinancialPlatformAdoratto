@@ -9,9 +9,15 @@ export async function middleware(request: NextRequest) {
   try {
     return await updateSession(request);
   } catch (err) {
-    console.error("[middleware] error:", err);
-    // Return a basic response instead of crashing — helps diagnose Vercel issues
-    return new Response("Internal Server Error", { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[middleware] error:", message);
+    // Show env var status to diagnose Vercel build issues
+    const hasUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const hasKey = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    return new Response(
+      `Middleware error: ${message} | ENV: url=${hasUrl}, key=${hasKey}`,
+      { status: 500 },
+    );
   }
 }
 
