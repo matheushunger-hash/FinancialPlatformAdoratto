@@ -15,6 +15,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import Link from "next/link";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,12 @@ export function RecurringTable({
       id: "supplierName",
       header: "Fornecedor",
       cell: (info) => (
-        <span className="font-medium">{info.getValue()}</span>
+        <Link
+          href={`/dashboard/fornecedores/${info.row.original.supplierId}`}
+          className="font-medium hover:underline"
+        >
+          {info.getValue()}
+        </Link>
       ),
       enableSorting: true,
     }),

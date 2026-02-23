@@ -226,9 +226,19 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                   >
                     {/* Top row: name/description + amount + status badge */}
                     <div className="flex items-center gap-3">
-                      <span className="min-w-0 flex-1 truncate font-medium" title={primaryText}>
-                        {primaryText}
-                      </span>
+                      {isSupplierDrillDown ? (
+                        <span className="min-w-0 flex-1 truncate font-medium" title={primaryText}>
+                          {primaryText}
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/dashboard/fornecedores/${p.supplierId}`}
+                          className="min-w-0 flex-1 truncate font-medium hover:underline"
+                          title={primaryText}
+                        >
+                          {primaryText}
+                        </Link>
+                      )}
                       <span className="shrink-0 text-base font-semibold tabular-nums">
                         {formatBRL(Number(p.payValue))}
                       </span>

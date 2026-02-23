@@ -87,7 +87,12 @@ export function SuppliersTable({
       id: "name",
       header: "Nome",
       cell: (info) => (
-        <span className="font-medium">{info.getValue()}</span>
+        <Link
+          href={`/dashboard/fornecedores/${info.row.original.id}`}
+          className="font-medium hover:underline"
+        >
+          {info.getValue()}
+        </Link>
       ),
       enableSorting: true,
     }),

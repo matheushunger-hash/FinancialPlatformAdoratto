@@ -43,6 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { formatCNPJ, formatCPF } from "@/lib/suppliers/validation";
 import { getAvailableActions } from "@/lib/payables/transitions";
@@ -146,12 +147,17 @@ function buildColumns(
     ...(hideSupplierColumns
       ? []
       : [
-          // 1. Fornecedor (sortable)
+          // 1. Fornecedor (sortable, clickable link to supplier detail)
           columnHelper.accessor("supplierName", {
             id: "supplierName",
             header: "Fornecedor",
-            cell: (info: { getValue: () => string }) => (
-              <span className="font-medium">{info.getValue()}</span>
+            cell: (info: { getValue: () => string; row: { original: PayableListItem } }) => (
+              <Link
+                href={`/dashboard/fornecedores/${info.row.original.supplierId}`}
+                className="font-medium hover:underline"
+              >
+                {info.getValue()}
+              </Link>
             ),
             enableSorting: true,
           }),
