@@ -5,6 +5,33 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-23 — Issue #62: RPInfo Flex XLSX Parser — CLOSED
+
+**What was built:**
+- `src/lib/ar/types.ts` — Shared TypeScript interfaces for the AR module: `ParsedTransaction`, `ParseError`, `ParseMeta`, `ParseResult` (parser types), plus `CardTransactionListItem`, `ImportBatchSummary`, `TransactionFilters`, `TRANSACTION_STATUS_CONFIG` (API/UI types)
+- `src/lib/ar/importParser.ts` — Core parser function `parseImportFile(buffer)`: reads RPInfo Flex XLSX (header at row 6, ~1,900 data rows), validates each row with Zod, parses dates via `parseImportDate`, parses amounts with Brazilian format support, detects in-file duplicate Código, computes summary metadata (gross/net totals, date range)
+- `src/lib/ar/validation.ts` — Zod schemas for future UI: `receiptFormSchema` (payment confirmation form) and `transactionFilterSchema` (transaction list filters)
+
+**What went well:**
+- Pure function layer — zero database dependencies, buffer in → structured data out
+- Reused `parseImportDate` from existing AP import parser — no code duplication
+- Zero new dependencies (xlsx and zod already installed)
+- Zero TypeScript errors, zero deviations from plan
+- All 3 files worked on first attempt — plan was detailed and accurate
+
+**Mistakes caught — avoid next time:**
+- None — clean implementation
+
+**Patterns established:**
+- AR parser follows same error-collection pattern as AP import: collect row-level errors with spreadsheet row numbers, continue processing remaining rows
+- `z.union([z.string(), z.number()])` for XLSX cells that could be either type — XLSX doesn't guarantee string vs number
+- Column name variants: RPInfo columns may have trailing periods ("Taxa Adm." vs "Taxa Adm") — accept both in Zod schema, use `??` fallback in parser
+- `parseNumber()` handles raw XLSX numbers and Brazilian-formatted strings ("1.234,56" → 1234.56)
+- Fee fields default to 0 if missing/invalid — some voucher rows may not have fees
+- Row number formula: `HEADER_ROW_INDEX + 2 + dataIndex` — maps 0-indexed data array to 1-based spreadsheet rows accounting for header position
+
+---
+
 ### 2026-02-23 — Issue #61: Add Prisma Schema Models for AR Module — CLOSED
 
 **What was built:**
