@@ -67,13 +67,22 @@ function CustomWeeklyTooltip({ active, payload }: any) {
   );
 }
 
+export interface SelectedWeek {
+  weekStart: string;
+  weekEnd: string;
+  label: string;
+}
+
 interface WeeklyCalendarProps {
   data: WeeklyPaymentData[] | null;
   loading: boolean;
   onDrillDown: (filter: DrillDownFilter) => void;
+  onWeekSelect?: (week: SelectedWeek) => void;
+  selectedWeekLabel?: string; // Label of the currently selected week (for visual highlight)
+  children?: React.ReactNode; // Rendered at the bottom of CardContent (e.g., WeekTopInvoices)
 }
 
-export function WeeklyCalendar({ data, loading, onDrillDown }: WeeklyCalendarProps) {
+export function WeeklyCalendar({ data, loading, onDrillDown, onWeekSelect, selectedWeekLabel, children }: WeeklyCalendarProps) {
   if (loading || !data) {
     return (
       <Card className="rounded-xl shadow-sm">
@@ -96,14 +105,14 @@ export function WeeklyCalendar({ data, loading, onDrillDown }: WeeklyCalendarPro
   // Axis tick style — currentColor adapts to light/dark mode
   const tickStyle = { fill: "currentColor", fontSize: 12 };
 
-  // Click handler for both bar segments — opens drill-down for the week
+  // Click handler for both bar segments — selects the week for the inline table
   function handleBarClick(_data: unknown) {
     const week = (_data as unknown as { payload: WeeklyPaymentData }).payload;
     if (!week) return;
-    onDrillDown({
-      title: `Semana ${week.label}`,
-      dueDateFrom: week.weekStart,
-      dueDateTo: week.weekEnd,
+    onWeekSelect?.({
+      weekStart: week.weekStart,
+      weekEnd: week.weekEnd,
+      label: week.label,
     });
   }
 
@@ -167,10 +176,17 @@ export function WeeklyCalendar({ data, loading, onDrillDown }: WeeklyCalendarPro
                   dataKey="overdueValue"
                   stackId="week"
                   radius={[0, 0, 0, 0]}
-                  fill={OVERDUE_COLOR}
                   cursor="pointer"
                   onClick={handleBarClick}
-                />
+                >
+                  {data.map((entry, i) => (
+                    <Cell
+                      key={i}
+                      fill={OVERDUE_COLOR}
+                      opacity={selectedWeekLabel && entry.label !== selectedWeekLabel ? 0.4 : 1}
+                    />
+                  ))}
+                </Bar>
                 {/* Pending segment — top of stack, colored by urgency tier */}
                 <Bar
                   dataKey="value"
@@ -180,7 +196,11 @@ export function WeeklyCalendar({ data, loading, onDrillDown }: WeeklyCalendarPro
                   onClick={handleBarClick}
                 >
                   {data.map((entry, i) => (
-                    <Cell key={i} fill={PENDING_TIER_COLORS[entry.urgencyTier]} />
+                    <Cell
+                      key={i}
+                      fill={PENDING_TIER_COLORS[entry.urgencyTier]}
+                      opacity={selectedWeekLabel && entry.label !== selectedWeekLabel ? 0.4 : 1}
+                    />
                   ))}
                 </Bar>
               </BarChart>
@@ -205,6 +225,7 @@ export function WeeklyCalendar({ data, loading, onDrillDown }: WeeklyCalendarPro
             </div>
           </>
         )}
+        {children}
       </CardContent>
     </Card>
   );

@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { KPICards } from "@/components/dashboard/kpi-cards";
 import { AgingCards } from "@/components/dashboard/aging-cards";
 import { BuyerBudgetGauge } from "@/components/dashboard/buyer-budget-gauge";
-import { WeeklyCalendar } from "@/components/dashboard/weekly-calendar";
+import { WeeklyCalendar, type SelectedWeek } from "@/components/dashboard/weekly-calendar";
+import { WeekTopInvoices } from "@/components/dashboard/week-top-invoices";
 import { DashboardCharts } from "@/components/dashboard/dashboard-charts";
 import { DrillDownSheet } from "@/components/dashboard/drill-down-sheet";
 import { PeriodSelector } from "@/components/dashboard/period-selector";
@@ -48,6 +49,7 @@ export function DashboardView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<SelectedWeek | null>(null);
 
   // Fetch dashboard data whenever the period changes
   const fetchData = useCallback(() => {
@@ -72,6 +74,20 @@ export function DashboardView() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Default the selected week to the current week once data loads
+  useEffect(() => {
+    if (data?.weeklyCalendar && !selectedWeek) {
+      const current = data.weeklyCalendar.find((w) => w.isCurrent);
+      if (current) {
+        setSelectedWeek({
+          weekStart: current.weekStart,
+          weekEnd: current.weekEnd,
+          label: current.label,
+        });
+      }
+    }
+  }, [data, selectedWeek]);
 
   // When the user picks a new period, update the URL (triggers re-fetch via useEffect)
   function handlePeriodChange(newFrom: string, newTo: string) {
@@ -102,6 +118,7 @@ export function DashboardView() {
         <div className="lg:col-span-2">
           <BuyerBudgetGauge
             data={data?.buyerBudget ?? null}
+            weeklyTopSuppliers={data?.weeklyTopSuppliers ?? null}
             loading={loading}
           />
         </div>
@@ -110,7 +127,24 @@ export function DashboardView() {
             data={data?.weeklyCalendar ?? null}
             loading={loading}
             onDrillDown={setDrillDown}
-          />
+            onWeekSelect={setSelectedWeek}
+            selectedWeekLabel={selectedWeek?.label}
+          >
+            {selectedWeek && (
+              <WeekTopInvoices
+                weekStart={selectedWeek.weekStart}
+                weekEnd={selectedWeek.weekEnd}
+                weekLabel={selectedWeek.label}
+                onDrillDown={() =>
+                  setDrillDown({
+                    title: `Semana ${selectedWeek.label}`,
+                    dueDateFrom: selectedWeek.weekStart,
+                    dueDateTo: selectedWeek.weekEnd,
+                  })
+                }
+              />
+            )}
+          </WeeklyCalendar>
         </div>
       </div>
 

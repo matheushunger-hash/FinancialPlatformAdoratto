@@ -35,6 +35,14 @@ import type {
 // Dark navy tooltips in light mode, popover colors in dark mode.
 // =============================================================================
 
+// Helper: today as YYYY-MM-DD using local time (avoids UTC shift in Brazil, #40)
+function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 // -- Status color map (updated for Stripe palette) --
 const STATUS_COLORS: Record<string, string> = {
   PENDING: "#F59E0B", // amber
@@ -343,7 +351,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
     .slice(0, 3);
 
   // "Hoje" reference line — only when today falls within the data range
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = toISODate(new Date());
   const showTodayLine = dailyData.some((d) => d.date === todayStr);
 
   // Totals for donut center label (count + R$ value)
@@ -505,7 +513,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                               title: label,
                               overdue: true,
                               dueDateFrom: "2020-01-01",
-                              dueDateTo: new Date().toISOString().split("T")[0],
+                              dueDateTo: toISODate(new Date()),
                             });
                           } else {
                             onDrillDown({
@@ -770,7 +778,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                       if (!bracket) return;
 
                       // Convert aging bracket to date range for drill-down
-                      const todayStr = new Date().toISOString().split("T")[0];
+                      const todayStr = toISODate(new Date());
                       const todayMs = new Date(todayStr + "T12:00:00").getTime();
                       const DAY_MS = 86_400_000;
 

@@ -88,6 +88,7 @@ model Tenant {
   cardTransactions   CardTransaction[]
   paymentReceipts    PaymentReceipt[]
   auditLogs          AuditLog[]
+  settings           TenantSettings?
 
   @@map("tenants")
 }
@@ -339,4 +340,17 @@ model AuditLog {
   @@index([entityType, entityId], map: "idx_audit_log_entity")
   @@index([userId], map: "idx_audit_log_user")
   @@map("audit_log")
+}
+
+/// Per-tenant configuration — spending limits, notification preferences, etc.
+model TenantSettings {
+  id                 String   @id @default(cuid())
+  tenantId           String   @unique @map("tenant_id") @db.Uuid
+  buyerSpendingLimit Decimal  @default(350000) @map("buyer_spending_limit") @db.Decimal(15, 2)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@map("tenant_settings")
 }

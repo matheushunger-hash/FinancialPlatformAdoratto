@@ -3,7 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import type { BuyerBudgetData } from "@/lib/dashboard/types";
+import { TopSuppliersTable } from "@/components/dashboard/top-suppliers-table";
+import type { BuyerBudgetData, WeeklyTopSuppliers } from "@/lib/dashboard/types";
 
 function formatBRL(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -40,10 +41,11 @@ const STATUS_CONFIG = {
 
 interface BuyerBudgetGaugeProps {
   data: BuyerBudgetData | null;
+  weeklyTopSuppliers: WeeklyTopSuppliers | null;
   loading: boolean;
 }
 
-export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
+export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBudgetGaugeProps) {
   if (loading || !data) {
     return (
       <Card className="rounded-xl shadow-sm">
@@ -57,6 +59,11 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
             <Skeleton className="h-5 w-32" />
             <Skeleton className="h-5 w-28" />
           </div>
+          <Skeleton className="mt-4 h-px w-full" />
+          <Skeleton className="h-4 w-44" />
+          {Array.from({ length: 10 }).map((_, i) => (
+            <Skeleton key={i} className="h-5 w-full" />
+          ))}
         </CardContent>
       </Card>
     );
@@ -67,6 +74,7 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
 
   // Split progress bar into pending + overdue segments (#91)
   const pendingOpen = data.totalOpen - data.overdueOpen;
+  const pendingCount = data.openCount - data.overdueCount;
   const fillPercent = Math.min((data.totalOpen / data.limit) * 100, 100);
   const pendingWidth = data.totalOpen > 0
     ? (pendingOpen / data.totalOpen) * fillPercent : 0;
@@ -94,15 +102,16 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
           </Badge>
         </div>
 
-        {/* Progress bar — split into pending + overdue segments (#91) */}
+        {/* Progress bar — two distinct color-coded segments */}
         <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
           <div className="flex h-full">
             {pendingWidth > 0 && (
               <div
-                className={`h-full transition-all duration-500 ${config.barColor} rounded-l-full ${
+                className={`h-full transition-all duration-500 bg-amber-500 rounded-l-full ${
                   overdueWidth > 0 ? "" : "rounded-r-full"
                 }`}
                 style={{ width: `${pendingWidth}%` }}
+                title={`Pendentes: ${formatBRL(pendingOpen)} (${pendingCount})`}
               />
             )}
             {overdueWidth > 0 && (
@@ -111,9 +120,36 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
                   pendingWidth > 0 ? "" : "rounded-l-full"
                 }`}
                 style={{ width: `${overdueWidth}%` }}
+                title={`Vencidos: ${formatBRL(data.overdueOpen)} (${data.overdueCount})`}
               />
             )}
           </div>
+        </div>
+
+        {/* Segment legend — colored dots with values */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
+            <span className="text-muted-foreground">
+              Pendentes:{" "}
+              <span className="font-medium tabular-nums text-foreground">
+                {formatCompactBRL(pendingOpen)}
+              </span>
+              <span className="ml-1 text-muted-foreground">({pendingCount})</span>
+            </span>
+          </span>
+          {data.overdueCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+              <span className="text-muted-foreground">
+                Vencidos:{" "}
+                <span className="font-medium tabular-nums text-red-600 dark:text-red-400">
+                  {formatCompactBRL(data.overdueOpen)}
+                </span>
+                <span className="ml-1 text-muted-foreground">({data.overdueCount})</span>
+              </span>
+            </span>
+          )}
         </div>
 
         {/* Status + remaining */}
@@ -125,23 +161,16 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
             {isOver
               ? `Excedido em ${formatBRL(Math.abs(data.remaining))}`
               : `Restam ${formatBRL(data.remaining)}`}
-            {data.overdueOpen > 0 && !isOver && (
-              <span className="text-red-500">
-                {" "}({formatCompactBRL(data.overdueOpen)} vencido)
-              </span>
-            )}
           </span>
         </div>
 
-        {/* Count */}
-        <p className="text-xs text-muted-foreground">
-          {data.openCount - data.overdueCount} pendente{data.openCount - data.overdueCount !== 1 ? "s" : ""}
-          {data.overdueCount > 0 && (
-            <span className="text-red-500">
-              , {data.overdueCount} vencido{data.overdueCount !== 1 ? "s" : ""}
-            </span>
-          )}
-        </p>
+        {/* Top 10 suppliers for the same week */}
+        {weeklyTopSuppliers && (
+          <TopSuppliersTable
+            suppliers={weeklyTopSuppliers.suppliers}
+            grandTotal={weeklyTopSuppliers.grandTotal}
+          />
+        )}
       </CardContent>
     </Card>
   );

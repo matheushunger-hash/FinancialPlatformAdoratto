@@ -45,6 +45,17 @@ async function main() {
     console.log(`Tenant already exists: ${tenant.id}`);
   }
 
+  // Ensure tenant has default settings (idempotent)
+  await prisma.tenantSettings.upsert({
+    where: { tenantId: tenant.id },
+    update: {},
+    create: {
+      tenantId: tenant.id,
+      buyerSpendingLimit: 350000,
+    },
+  });
+  console.log("  TenantSettings ensured");
+
   for (const user of users) {
     console.log(`Seeding ${user.email}...`);
 

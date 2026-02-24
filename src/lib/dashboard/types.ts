@@ -50,6 +50,7 @@ export interface TopSupplier {
   supplierId: string | null;
   supplierName: string;
   total: number; // Sum of all payValues in R$
+  count: number; // Number of payables for this supplier in the period
   paidTotal: number; // Sum of payValue for PAID payables
   overdueTotal: number; // Sum of payValue for overdue payables (PENDING/APPROVED past due)
   maxDaysOverdue: number; // Worst aging in days for this supplier
@@ -127,6 +128,12 @@ export interface WeeklyPaymentData {
   maxDaysOverdue: number; // Worst aging in this week (0 if no overdue)
 }
 
+// Top suppliers scoped to the current week (same range as BuyerBudgetGauge)
+export interface WeeklyTopSuppliers {
+  suppliers: TopSupplier[];
+  grandTotal: number; // Sum of ALL payables in the week (denominator for %)
+}
+
 // Full API response — extends KPIs with chart data + aging overview
 export interface DashboardResponse extends DashboardKPIs {
   charts: {
@@ -137,4 +144,5 @@ export interface DashboardResponse extends DashboardKPIs {
   agingOverview: AgingOverview;
   buyerBudget: BuyerBudgetData;
   weeklyCalendar: WeeklyPaymentData[];
+  weeklyTopSuppliers: WeeklyTopSuppliers;
 }

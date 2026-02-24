@@ -191,7 +191,7 @@ export async function GET(request: NextRequest) {
         _sum: { payValue: true },
       }),
 
-      // 8. Top 10 suppliers by payValue (horizontal bar chart)
+      // 8. Top 10 suppliers by payValue (horizontal bar chart + mini-table)
       prisma.payable.groupBy({
         by: ["supplierId"],
         where: {
@@ -199,6 +199,7 @@ export async function GET(request: NextRequest) {
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
+        _count: true,
         orderBy: { _sum: { payValue: "desc" } },
         take: 10,
       }),
@@ -226,7 +227,7 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // Batch 2: deltas, sparklines, budget gauge, weekly calendar
+    // Batch 2: deltas, sparklines, budget gauge, weekly calendar, weekly top suppliers
     const [
       prevPaid,
       prevDueInPeriod,
@@ -237,6 +238,8 @@ export async function GET(request: NextRequest) {
       budgetOverdueRaw,
       weeklyCalendarRaw,
       tenantSettings,
+      weeklyTopSuppliersRaw,
+      weeklyGrandTotalRaw,
     ] = await Promise.all([
       // 11. Previous period — paid (for delta comparison)
       prisma.payable.aggregate({
@@ -331,6 +334,28 @@ export async function GET(request: NextRequest) {
       prisma.tenantSettings.findUnique({
         where: { tenantId: ctx.tenantId },
         select: { buyerSpendingLimit: true },
+      }),
+
+      // 19. Top 10 suppliers by payValue in current week (mini-table)
+      prisma.payable.groupBy({
+        by: ["supplierId"],
+        where: {
+          ...tenantScope,
+          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+        orderBy: { _sum: { payValue: "desc" } },
+        take: 10,
+      }),
+
+      // 20. Grand total payValue in current week — denominator for % (#94)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+        },
+        _sum: { payValue: true },
       }),
     ]);
 
@@ -444,6 +469,7 @@ export async function GET(request: NextRequest) {
           ? (nameMap.get(row.supplierId) ?? "Desconhecido")
           : "Pagamentos Avulsos",
         total,
+        count: row._count,
         paidTotal,
         overdueTotal: od.overdueTotal,
         maxDaysOverdue,
@@ -605,6 +631,36 @@ export async function GET(request: NextRequest) {
       bucket.urgencyTier = computeUrgencyTier(bucket);
     }
 
+    // ---- Weekly top suppliers — resolve names (#94) ----
+    const weeklySupplierIds = weeklyTopSuppliersRaw
+      .map((r) => r.supplierId)
+      .filter(Boolean) as string[];
+    // Fetch names not already in nameMap (from period-filtered lookup)
+    const missingIds = weeklySupplierIds.filter((id) => !nameMap.has(id));
+    if (missingIds.length > 0) {
+      const extra = await prisma.supplier.findMany({
+        where: { id: { in: missingIds } },
+        select: { id: true, name: true },
+      });
+      for (const s of extra) nameMap.set(s.id, s.name);
+    }
+
+    const weeklyTopSuppliers = {
+      suppliers: weeklyTopSuppliersRaw.map((row) => ({
+        supplierId: row.supplierId,
+        supplierName: row.supplierId
+          ? (nameMap.get(row.supplierId) ?? "Desconhecido")
+          : "Pagamentos Avulsos",
+        total: Number(row._sum.payValue ?? 0),
+        count: row._count,
+        paidTotal: 0,
+        overdueTotal: 0,
+        maxDaysOverdue: 0,
+        urgencyTier: "green" as const,
+      })),
+      grandTotal: Number(weeklyGrandTotalRaw._sum.payValue ?? 0),
+    };
+
     // ---- Build response ----
     const response: DashboardResponse = {
       totalPayable: {
@@ -651,6 +707,7 @@ export async function GET(request: NextRequest) {
       },
       buyerBudget,
       weeklyCalendar,
+      weeklyTopSuppliers,
       agingOverview: {
         avgDaysOverdue,
         interestExposure: Math.round(interestExposure * 100) / 100,
