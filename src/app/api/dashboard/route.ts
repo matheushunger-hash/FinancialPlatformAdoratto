@@ -372,13 +372,74 @@ export async function GET(request: NextRequest) {
         : [];
     const nameMap = new Map(suppliers.map((s) => [s.id, s.name]));
 
-    const topSuppliers = topSuppliersRaw.map((row) => ({
-      supplierId: row.supplierId,
-      supplierName: row.supplierId
-        ? (nameMap.get(row.supplierId) ?? "Desconhecido")
-        : "Pagamentos Avulsos",
-      total: Number(row._sum.payValue ?? 0),
-    }));
+    // Overdue breakdown per top 10 supplier — scoped to same period as totals
+    // Uses AND to combine period range (gte+lte) with overdue condition (lt today)
+    const overdueBySupplier = supplierIds.length > 0
+      ? await prisma.payable.groupBy({
+          by: ["supplierId"],
+          where: {
+            ...tenantScope,
+            supplierId: { in: supplierIds },
+            status: { in: [...activeStatuses] },
+            AND: [
+              { dueDate: { gte: rangeStart, lte: rangeEnd } },
+              { dueDate: { lt: today } },
+            ],
+          },
+          _sum: { payValue: true },
+          _min: { dueDate: true },
+        })
+      : [];
+    const overdueMap = new Map(
+      overdueBySupplier.map((r) => [
+        r.supplierId,
+        {
+          overdueTotal: Number(r._sum.payValue ?? 0),
+          minDueDate: r._min.dueDate,
+        },
+      ]),
+    );
+
+    // Paid breakdown per top 10 supplier
+    const paidBySupplier = supplierIds.length > 0
+      ? await prisma.payable.groupBy({
+          by: ["supplierId"],
+          where: {
+            ...tenantScope,
+            supplierId: { in: supplierIds },
+            status: "PAID",
+            dueDate: { gte: rangeStart, lte: rangeEnd },
+          },
+          _sum: { payValue: true },
+        })
+      : [];
+    const paidMap = new Map(
+      paidBySupplier.map((r) => [r.supplierId, Number(r._sum.payValue ?? 0)]),
+    );
+
+    const topSuppliers = topSuppliersRaw.map((row) => {
+      const od = overdueMap.get(row.supplierId) ?? { overdueTotal: 0, minDueDate: null };
+      const total = Number(row._sum.payValue ?? 0);
+      const paidTotal = paidMap.get(row.supplierId) ?? 0;
+      const maxDaysOverdue = od.minDueDate
+        ? Math.floor((today.getTime() - od.minDueDate.getTime()) / 86_400_000)
+        : 0;
+      return {
+        supplierId: row.supplierId,
+        supplierName: row.supplierId
+          ? (nameMap.get(row.supplierId) ?? "Desconhecido")
+          : "Pagamentos Avulsos",
+        total,
+        paidTotal,
+        overdueTotal: od.overdueTotal,
+        maxDaysOverdue,
+        urgencyTier: computeUrgencyTier({
+          overdueValue: od.overdueTotal,
+          totalValue: total,
+          maxDaysOverdue,
+        }),
+      };
+    });
 
     // ---- Build sparklines ----
 

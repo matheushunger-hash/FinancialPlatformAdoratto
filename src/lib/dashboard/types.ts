@@ -48,7 +48,11 @@ export interface StatusDistribution {
 export interface TopSupplier {
   supplierId: string | null;
   supplierName: string;
-  total: number; // Sum of payValue in R$
+  total: number; // Sum of all payValues in R$
+  paidTotal: number; // Sum of payValue for PAID payables
+  overdueTotal: number; // Sum of payValue for overdue payables (PENDING/APPROVED past due)
+  maxDaysOverdue: number; // Worst aging in days for this supplier
+  urgencyTier: UrgencyTier; // Color tier based on overdue ratio + max aging
 }
 
 // Filter state for drill-down Sheet — built from chart click events

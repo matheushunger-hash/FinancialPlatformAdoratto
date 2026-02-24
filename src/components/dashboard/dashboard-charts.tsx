@@ -22,6 +22,7 @@ import type {
   DrillDownFilter,
   StatusDistribution,
   TopSupplier,
+  UrgencyTier,
 } from "@/lib/dashboard/types";
 
 // =============================================================================
@@ -51,6 +52,16 @@ const STATUS_LABELS: Record<string, string> = {
   REJECTED: "Rejeitado",
   CANCELLED: "Cancelado",
 };
+
+// Urgency-tier palette — same as weekly-calendar.tsx
+const PENDING_TIER_COLORS: Record<UrgencyTier, string> = {
+  green: "#22C55E",
+  yellow: "#F59E0B",
+  orange: "#F97316",
+  red: "#DC2626",
+};
+const OVERDUE_COLOR = "#EF4444";
+const PAID_COLOR = "#00D4AA"; // teal — matches PAID in STATUS_COLORS
 
 const ALL_STATUSES = [
   "PENDING",
@@ -151,15 +162,28 @@ function CustomSupplierTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: { value: number; payload: { supplierName: string } }[];
+  payload?: { payload: TopSupplier & { pendingAmount: number } }[];
 }) {
   if (!active || !payload?.length) return null;
-
-  const entry = payload[0];
+  const s = payload[0].payload;
   return (
     <div className={TOOLTIP_CLASS}>
-      <p className="mb-1 font-medium">{entry.payload.supplierName}</p>
-      <p className="tabular-nums">{formatBRL(entry.value)}</p>
+      <p className="mb-1 font-semibold">{s.supplierName}</p>
+      <p className="tabular-nums">{formatBRL(s.total)}</p>
+      <div className="mt-1 space-y-0.5 text-xs opacity-80">
+        {s.paidTotal > 0 && (
+          <p className="text-teal-300">Pago — {formatBRL(s.paidTotal)}</p>
+        )}
+        {s.pendingAmount > 0 && (
+          <p>Pendente — {formatBRL(s.pendingAmount)}</p>
+        )}
+        {s.overdueTotal > 0 && (
+          <p className="text-red-300">
+            Vencido — {formatBRL(s.overdueTotal)}
+            {s.maxDaysOverdue > 0 && ` (até ${s.maxDaysOverdue}d)`}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -410,7 +434,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
           </CardContent>
         </Card>
 
-        {/* Chart 3 — Horizontal bar: top 10 suppliers with background tracks */}
+        {/* Chart 3 — Horizontal stacked bar: top 10 suppliers (overdue + pending) */}
         <Card className="rounded-xl shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">
@@ -421,54 +445,135 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
             {charts.topSuppliers.length === 0 ? (
               <EmptyChart message="Sem dados para este período." />
             ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart
-                  data={charts.topSuppliers}
-                  layout="vertical"
-                  margin={{ left: 60 }}
-                >
-                  <CartesianGrid
-                    className="stroke-border"
-                    strokeOpacity={0.5}
-                    horizontal={false}
-                  />
-                  <XAxis
-                    type="number"
-                    tick={tickStyle}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={formatCompactBRL}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="supplierName"
-                    tick={tickStyle}
-                    tickLine={false}
-                    axisLine={false}
-                    width={200}
-                  />
-                  <Tooltip content={<CustomSupplierTooltip />} />
-                  <Bar
-                    dataKey="total"
-                    fill="#635BFF"
-                    radius={[0, 4, 4, 0]}
-                    background={{ fill: "var(--color-muted)", radius: 4 }}
-                    cursor={onDrillDown ? "pointer" : undefined}
-                    onClick={(_data) => {
-                      if (!onDrillDown || !from || !to) return;
-                      const entry = (_data as unknown as { payload: TopSupplier }).payload ?? _data;
-                      const supplier = entry as TopSupplier;
-                      if (!supplier.supplierId) return;
-                      onDrillDown({
-                        title: supplier.supplierName,
-                        supplierId: supplier.supplierId,
-                        dueDateFrom: from,
-                        dueDateTo: to,
-                      });
-                    }}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              (() => {
+                const supplierData = charts.topSuppliers.map((s) => ({
+                  ...s,
+                  pendingAmount: Math.max(0, s.total - s.overdueTotal - s.paidTotal),
+                }));
+                const totalSum = supplierData.reduce((acc, d) => acc + d.total, 0);
+                const overdueSum = supplierData.reduce((acc, d) => acc + d.overdueTotal, 0);
+                const paidSum = supplierData.reduce((acc, d) => acc + d.paidTotal, 0);
+
+                function handleSupplierClick(_data: unknown) {
+                  if (!onDrillDown || !from || !to) return;
+                  const entry = (_data as unknown as { payload: TopSupplier }).payload ?? _data;
+                  const supplier = entry as TopSupplier;
+                  if (!supplier.supplierId) return;
+                  onDrillDown({
+                    title: supplier.supplierName,
+                    supplierId: supplier.supplierId,
+                    dueDateFrom: from,
+                    dueDateTo: to,
+                  });
+                }
+
+                return (
+                  <>
+                    {/* Summary ribbon */}
+                    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg bg-muted/50 px-4 py-3 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Total: </span>
+                        <span className="font-semibold tabular-nums">{formatBRL(totalSum)}</span>
+                      </div>
+                      {paidSum > 0 && (
+                        <div>
+                          <span className="text-muted-foreground">Pago: </span>
+                          <span className="font-semibold tabular-nums text-teal-600 dark:text-teal-400">
+                            {formatBRL(paidSum)}
+                          </span>
+                        </div>
+                      )}
+                      {overdueSum > 0 && (
+                        <div>
+                          <span className="text-muted-foreground">Vencido: </span>
+                          <span className="font-semibold tabular-nums text-red-600 dark:text-red-400">
+                            {formatBRL(overdueSum)}
+                          </span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-muted-foreground">{supplierData.length} fornecedores</span>
+                      </div>
+                    </div>
+
+                    <ResponsiveContainer width="100%" height={300}>
+                      <BarChart
+                        data={supplierData}
+                        layout="vertical"
+                        margin={{ left: 60 }}
+                      >
+                        <CartesianGrid
+                          className="stroke-border"
+                          strokeOpacity={0.5}
+                          horizontal={false}
+                        />
+                        <XAxis
+                          type="number"
+                          tick={tickStyle}
+                          tickLine={false}
+                          axisLine={false}
+                          tickFormatter={formatCompactBRL}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="supplierName"
+                          tick={tickStyle}
+                          tickLine={false}
+                          axisLine={false}
+                          width={200}
+                        />
+                        <Tooltip content={<CustomSupplierTooltip />} />
+                        {/* Paid segment — bottom of stack, teal */}
+                        <Bar
+                          dataKey="paidTotal"
+                          stackId="supplier"
+                          radius={[0, 0, 0, 0]}
+                          fill={PAID_COLOR}
+                          cursor={onDrillDown ? "pointer" : undefined}
+                          onClick={handleSupplierClick}
+                        />
+                        {/* Pending segment — middle, colored by urgency tier */}
+                        <Bar
+                          dataKey="pendingAmount"
+                          stackId="supplier"
+                          radius={[0, 0, 0, 0]}
+                          cursor={onDrillDown ? "pointer" : undefined}
+                          onClick={handleSupplierClick}
+                        >
+                          {supplierData.map((entry, i) => (
+                            <Cell key={i} fill={PENDING_TIER_COLORS[entry.urgencyTier]} />
+                          ))}
+                        </Bar>
+                        {/* Overdue segment — top of stack, red (most visible) */}
+                        <Bar
+                          dataKey="overdueTotal"
+                          stackId="supplier"
+                          radius={[0, 4, 4, 0]}
+                          fill={OVERDUE_COLOR}
+                          cursor={onDrillDown ? "pointer" : undefined}
+                          onClick={handleSupplierClick}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+
+                    {/* Custom legend */}
+                    <div className="mt-3 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: PAID_COLOR }} />
+                        Pago
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: "#22C55E" }} />
+                        Pendente
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: OVERDUE_COLOR }} />
+                        Vencido
+                      </span>
+                    </div>
+                  </>
+                );
+              })()
             )}
           </CardContent>
         </Card>
