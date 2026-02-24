@@ -322,6 +322,21 @@ export async function POST(request: NextRequest) {
       // Compute juros/multa (interest/penalty)
       const jurosMulta = payValue > amount ? payValue - amount : 0;
 
+      // Detect overdue payables from "Excluídas" + "Mês Ref." columns (#96)
+      // When "Excluídas" = "segurado" and "Mês Ref." has a date:
+      //   - "Mês Ref." is the REAL original due date
+      //   - "Vencimento" is the rolling/tracking date (rolled forward daily)
+      const rawExcludedTag = getField(row, "excludedTag");
+      const isSegurado = /^segurado$/i.test(String(rawExcludedTag || "").trim());
+
+      const rawRefDate = getField(row, "refDate");
+      const refDate = parseImportDate(rawRefDate);
+
+      // Auto-add "segurado" tag when detected from "Excluídas" column
+      if (isSegurado && !tags.includes("segurado")) {
+        tags.push("segurado");
+      }
+
       // Determine paid status from the "Pago?" column
       const rawPaidStatus = getField(row, "paidStatus");
       const isPaid = /^sim$/i.test(String(rawPaidStatus || "").trim());
@@ -359,8 +374,18 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const parsedDueDate = new Date(dueDate + "T12:00:00");
       const parsedIssueDate = new Date(issueDate + "T12:00:00");
+
+      // For overdue items ("segurado" + ref date), the spreadsheet's "Vencimento"
+      // has the rolling date and "Mês Ref." has the real original due date.
+      // Swap: dueDate ← refDate (original), overdueTrackedAt ← vencimento (rolling)
+      const vencimentoDate = new Date(dueDate + "T12:00:00");
+      const parsedDueDate = (isSegurado && refDate)
+        ? new Date(refDate + "T12:00:00")
+        : vencimentoDate;
+      const parsedOverdueTrackedAt = (isSegurado && refDate)
+        ? vencimentoDate
+        : null;
 
       // Update mode: two-tier matching strategy
       // Tier 1: invoiceNumber (stable across date/amount changes)
@@ -397,15 +422,17 @@ export async function POST(request: NextRequest) {
         }
 
         if (existing) {
-          // Only set overdueTrackedAt when the import date differs from the original dueDate
-          const dateChanged = existing.dueDate.getTime() !== parsedDueDate.getTime();
+          // Set overdueTrackedAt from "segurado" swap or when dates differ
+          const trackingDate = parsedOverdueTrackedAt
+            ?? (existing.dueDate.getTime() !== parsedDueDate.getTime() ? parsedDueDate : null);
 
           await prisma.payable.update({
             where: { id: existing.id },
             data: matchedByInvoice
               ? {
                   // Confident match — safe to update financial fields (but NOT dueDate)
-                  ...(dateChanged ? { overdueTrackedAt: parsedDueDate } : {}),
+                  ...(trackingDate ? { overdueTrackedAt: trackingDate } : {}),
+                  ...(tags.length > 0 ? { tags } : {}),
                   issueDate: parsedIssueDate,
                   amount,
                   payValue,
@@ -416,7 +443,8 @@ export async function POST(request: NextRequest) {
                 }
               : {
                   // Heuristic match — conservative update only
-                  ...(dateChanged ? { overdueTrackedAt: parsedDueDate } : {}),
+                  ...(trackingDate ? { overdueTrackedAt: trackingDate } : {}),
+                  ...(tags.length > 0 ? { tags } : {}),
                   status,
                   paidAt,
                   jurosMulta,
@@ -440,6 +468,7 @@ export async function POST(request: NextRequest) {
           jurosMulta,
           issueDate: parsedIssueDate,
           dueDate: parsedDueDate,
+          ...(parsedOverdueTrackedAt ? { overdueTrackedAt: parsedOverdueTrackedAt } : {}),
           status,
           category,
           paymentMethod,

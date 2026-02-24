@@ -22,6 +22,8 @@ export const TARGET_FIELDS = [
   { key: "notes", label: "Observações", required: false },
   { key: "tags", label: "Tags", required: false },
   { key: "paidStatus", label: "Pago?", required: false },
+  { key: "excludedTag", label: "Excluídas/Segurado", required: false },
+  { key: "refDate", label: "Mês Referência", required: false },
 ] as const;
 
 export type TargetFieldKey = (typeof TARGET_FIELDS)[number]["key"];

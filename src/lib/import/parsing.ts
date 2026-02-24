@@ -192,6 +192,14 @@ const HEADER_PATTERNS: { field: TargetFieldKey; patterns: RegExp[] }[] = [
     field: "paidStatus",
     patterns: [/pago\??/i, /paid/i, /status.*pagamento/i, /já pago/i],
   },
+  {
+    field: "excludedTag",
+    patterns: [/exclu[ií]d/i, /segurad/i],
+  },
+  {
+    field: "refDate",
+    patterns: [/m[eê]s\s*ref/i, /refer[eê]ncia/i, /ref\.?\s*m[eê]s/i],
+  },
 ];
 
 /**
