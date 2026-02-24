@@ -57,8 +57,10 @@ export function StepUpload({ onFileParsed }: StepUploadProps) {
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
 
-      // Convert to array of objects — each key is a column header
-      const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { raw: true });
+      // defval: "" ensures columns that are empty in some rows still appear
+      // as keys — without it, SheetJS omits empty cells and columns like
+      // "Excluídas" (only populated for some rows) would be invisible.
+      const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, { raw: true, defval: "" });
 
       if (rows.length === 0) {
         toast.error("A planilha está vazia. Verifique o arquivo e tente novamente.");
@@ -66,7 +68,7 @@ export function StepUpload({ onFileParsed }: StepUploadProps) {
         return;
       }
 
-      // Extract headers from the first row's keys
+      // Extract headers from the first row's keys (defval ensures all columns present)
       const headers = Object.keys(rows[0]);
 
       onFileParsed(file.name, headers, rows);
