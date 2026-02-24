@@ -105,6 +105,8 @@ export interface BuyerBudgetData {
   overdueOpen: number; // Total R$ of overdue payables due this week
   overdueCount: number; // Count of overdue payables due this week
   weekLabel: string; // "21/02 – 27/02" (display label for current week)
+  weekStart: string; // ISO date "2026-02-22" (Saturday)
+  weekEnd: string; // ISO date "2026-02-28" (Friday)
 }
 
 // =============================================================================

@@ -336,12 +336,13 @@ export async function GET(request: NextRequest) {
         select: { buyerSpendingLimit: true },
       }),
 
-      // 19. Top 10 suppliers by payValue in current week (mini-table)
+      // 19. Top 10 suppliers by payValue in current week — pending-only, gte today
       prisma.payable.groupBy({
         by: ["supplierId"],
         where: {
           ...tenantScope,
-          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: today, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
         _count: true,
@@ -349,11 +350,12 @@ export async function GET(request: NextRequest) {
         take: 10,
       }),
 
-      // 20. Grand total payValue in current week — denominator for % (#94)
+      // 20. Grand total payValue in current week — pending-only, gte today (#94)
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: today, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
       }),
@@ -550,10 +552,11 @@ export async function GET(request: NextRequest) {
         ? Math.round(totalAgingDays / overduePayables.length)
         : 0;
 
-    // ---- Buyer budget gauge (#84, #91) ----
+    // ---- Buyer budget gauge (#84, #91, refactor: exclude overdue) ----
     const pendingOpen = Number(budgetPendingRaw._sum.payValue ?? 0);
     const overdueOpen = Number(budgetOverdueRaw._sum.payValue ?? 0);
-    const totalOpen = pendingOpen + overdueOpen;
+    // totalOpen = pending-only (overdue excluded from gauge metric, still shown in legend)
+    const totalOpen = pendingOpen;
     const limit = Number(tenantSettings?.buyerSpendingLimit ?? 350000);
     const utilization = limit > 0 ? totalOpen / limit : 0;
 
@@ -562,7 +565,7 @@ export async function GET(request: NextRequest) {
     const cweStr = currentWeekEnd.toISOString().split("T")[0];
     const weekLabel = `${cwsStr.slice(8, 10)}/${cwsStr.slice(5, 7)} – ${cweStr.slice(8, 10)}/${cweStr.slice(5, 7)}`;
 
-    // Status: utilization-based tiers, but overdue forces minimum "yellow"
+    // Status: pure utilization-based tiers (overdue no longer forces yellow)
     const rawStatus: "green" | "yellow" | "red" =
       utilization >= BUDGET_THRESHOLDS.yellow ? "red" :
       utilization >= BUDGET_THRESHOLDS.green ? "yellow" : "green";
@@ -572,11 +575,13 @@ export async function GET(request: NextRequest) {
       limit,
       utilization,
       remaining: limit - totalOpen,
-      status: rawStatus === "green" && overdueOpen > 0 ? "yellow" : rawStatus,
-      openCount: budgetPendingRaw._count + budgetOverdueRaw._count,
+      status: rawStatus,
+      openCount: budgetPendingRaw._count,
       overdueOpen,
       overdueCount: budgetOverdueRaw._count,
       weekLabel,
+      weekStart: cwsStr,
+      weekEnd: cweStr,
     };
 
     // ---- Weekly calendar bucketing (#84) ----

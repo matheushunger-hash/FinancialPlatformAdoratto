@@ -72,14 +72,18 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
   const config = STATUS_CONFIG[data.status];
   const isOver = data.remaining < 0;
 
-  // Split progress bar into pending + overdue segments (#91)
-  const pendingOpen = data.totalOpen - data.overdueOpen;
-  const pendingCount = data.openCount - data.overdueCount;
-  const fillPercent = Math.min((data.totalOpen / data.limit) * 100, 100);
-  const pendingWidth = data.totalOpen > 0
-    ? (pendingOpen / data.totalOpen) * fillPercent : 0;
-  const overdueWidth = data.totalOpen > 0
-    ? (data.overdueOpen / data.totalOpen) * fillPercent : 0;
+  // Bar segments: pending as main metric, overdue as informational extra
+  // data.totalOpen is pending-only after API refactor (overdue excluded from gauge)
+  const pendingValue = data.totalOpen;
+  const pendingCount = data.openCount;
+
+  // Pending as % of limit (main metric)
+  const pendingPercent = Math.min((pendingValue / data.limit) * 100, 100);
+
+  // Overdue as additional % of limit (informational, not counted toward gauge)
+  const overduePercent = data.overdueOpen > 0
+    ? Math.min((data.overdueOpen / data.limit) * 100, 100 - pendingPercent)
+    : 0;
 
   return (
     <Card className="rounded-xl shadow-sm">
@@ -105,21 +109,21 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
         {/* Progress bar — two distinct color-coded segments */}
         <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
           <div className="flex h-full">
-            {pendingWidth > 0 && (
+            {pendingPercent > 0 && (
               <div
                 className={`h-full transition-all duration-500 bg-amber-500 rounded-l-full ${
-                  overdueWidth > 0 ? "" : "rounded-r-full"
+                  overduePercent > 0 ? "" : "rounded-r-full"
                 }`}
-                style={{ width: `${pendingWidth}%` }}
-                title={`Pendentes: ${formatBRL(pendingOpen)} (${pendingCount})`}
+                style={{ width: `${pendingPercent}%` }}
+                title={`Pendentes: ${formatBRL(pendingValue)} (${pendingCount})`}
               />
             )}
-            {overdueWidth > 0 && (
+            {overduePercent > 0 && (
               <div
                 className={`h-full rounded-r-full transition-all duration-500 bg-red-500 ${
-                  pendingWidth > 0 ? "" : "rounded-l-full"
+                  pendingPercent > 0 ? "" : "rounded-l-full"
                 }`}
-                style={{ width: `${overdueWidth}%` }}
+                style={{ width: `${overduePercent}%` }}
                 title={`Vencidos: ${formatBRL(data.overdueOpen)} (${data.overdueCount})`}
               />
             )}
@@ -133,7 +137,7 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
             <span className="text-muted-foreground">
               Pendentes:{" "}
               <span className="font-medium tabular-nums text-foreground">
-                {formatCompactBRL(pendingOpen)}
+                {formatCompactBRL(pendingValue)}
               </span>
               <span className="ml-1 text-muted-foreground">({pendingCount})</span>
             </span>
@@ -169,6 +173,8 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
           <TopSuppliersTable
             suppliers={weeklyTopSuppliers.suppliers}
             grandTotal={weeklyTopSuppliers.grandTotal}
+            weekStart={data.weekStart}
+            weekEnd={data.weekEnd}
           />
         )}
       </CardContent>
