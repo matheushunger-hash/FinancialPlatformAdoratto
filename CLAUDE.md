@@ -185,7 +185,9 @@ Standard workflow for completing an ADR/feature:
 - `buildSparkline(byDay, rangeStart, rangeEnd)` fills zero-value days for continuous area charts
 - Previous period: `periodMs = rangeEnd - rangeStart`, shift back by that duration
 - Bar background tracks: `background={{ fill: "var(--color-muted)", radius: 4 }}` for progress-bar effect
-- Donut center label: `<Label content={({ viewBox }) => <text>}/>` using `viewBox.cx/cy`
+- Donut center label: `<Label content={({ viewBox }) => <text>}/>` using `viewBox.cx/cy` — multi-line via `<tspan dy="1.3em">`
+- Exploded pie slice: custom `shape` function on `<Pie>` using `Sector` with trigonometric cx/cy offset along midAngle — only offset target slices (e.g., OVERDUE), return normal `<Sector>` for others
+- Donut drill-down: `<Cell onClick>` per slice, OVERDUE uses compound `overdue: true` filter (not `status: "OVERDUE"`)
 - Use hex colors for SVG fills — CSS variable refs may not resolve in SVG context
 - KPI card drill-down: `CardConfig.buildFilter(from, to) => DrillDownFilter` — each card declaratively maps to its filter
 - Comma-separated multi-status API filter: `status=PENDING,APPROVED` → `split(",")` → validate → `{ in: [...] }`
@@ -223,7 +225,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #61 (AR Schema Models), Issue #62 (RPInfo Flex XLSX Parser), Issue #63 (AR Import Service), Issue #48 (Forward-Looking Date Presets), Issue #53 (Unify Suppliers Table), Issue #61 (AR Schema Models), Issue #87 (KPI Cards Clickable Drill-Down), Issue #88 (Top 10 Suppliers Stacked Overdue)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #61 (AR Schema Models), Issue #62 (RPInfo Flex XLSX Parser), Issue #63 (AR Import Service), Issue #48 (Forward-Looking Date Presets), Issue #53 (Unify Suppliers Table), Issue #61 (AR Schema Models), Issue #87 (KPI Cards Clickable Drill-Down), Issue #88 (Top 10 Suppliers Stacked Overdue), Issue #90 (Donut Drill-Down + Values)
 
 Full session history: `docs/session-log.md`
 

@@ -704,3 +704,23 @@ Split each supplier's horizontal bar into 3 color-coded segments: Pago (teal), P
 - Optional API enrichment via `?include=summary` query param
 - `hideSupplierColumns` conditional column pattern
 - UUID validation in Server Component pages: `UUID_REGEX.test(id)` → `notFound()`
+
+---
+
+### 2026-02-24 — Issue #90: Status Distribution Donut — Drill-Down + Value Display — CLOSED
+
+**What went well:**
+- Clean 3-file implementation, zero TypeScript errors, zero deviations from the plan
+- Extended existing Prisma `groupBy` query with `_sum` instead of adding a new query — no performance cost
+- Reused the exact same drill-down pattern (click → `DrillDownFilter` → `onDrillDown()`) as all other charts
+- Exploded OVERDUE slice uses Recharts `Sector` with trigonometric offset — clean math, no external deps
+- OVERDUE drill-down correctly uses compound `overdue: true` filter (not `status: "OVERDUE"`)
+
+**Mistakes caught — avoid next time:**
+1. No mistakes — plan was well-specified and implementation was straightforward
+
+**Patterns established:**
+- Exploded pie slice: custom `shape` function on `<Pie>` using `Sector` with `cx/cy` offset along `midAngle` — offset only target slices, return normal `Sector` for others
+- Donut drill-down: `<Cell onClick>` per slice — same `DrillDownFilter` contract as bar/aging charts
+- Multi-line center label: chain `<tspan dy="1.3em">` elements inside `<text>` for stacked lines (count + label + value)
+- Extending `groupBy` with `_sum`: add `_sum: { payValue: true }` to existing query rather than creating a new one — same DB round-trip, more data
