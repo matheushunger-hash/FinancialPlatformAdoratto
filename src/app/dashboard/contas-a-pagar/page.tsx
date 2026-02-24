@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import { prisma } from "@/lib/prisma";
@@ -26,7 +27,9 @@ export default async function ContasAPagarPage() {
         Gerencie os títulos e contas a pagar da plataforma.
       </p>
       <div className="mt-6">
-        <PayablesView userRole={profile!.role} />
+        <Suspense>
+          <PayablesView userRole={profile!.role} />
+        </Suspense>
       </div>
     </div>
   );

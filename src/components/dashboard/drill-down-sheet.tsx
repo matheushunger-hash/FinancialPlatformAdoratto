@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ExternalLink, Loader2, Search, X } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { STATUS_CONFIG } from "@/lib/payables/types";
@@ -47,7 +49,7 @@ function buildPayablesUrl(filter: DrillDownFilter): string {
   if (filter.overdue) params.set("overdue", "true");
   params.set("dueDateFrom", filter.dueDateFrom);
   params.set("dueDateTo", filter.dueDateTo);
-  return `/contas-a-pagar?${params.toString()}`;
+  return `/dashboard/contas-a-pagar?${params.toString()}`;
 }
 
 interface DrillDownSheetProps {
@@ -56,12 +58,30 @@ interface DrillDownSheetProps {
 }
 
 export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
+  const router = useRouter();
+
   const [payables, setPayables] = useState<PayableListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Search state — same debounce pattern as payables-view.tsx
+  const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce search input by 300ms
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchTerm]);
 
   // Derived state
   const hasMore = payables.length < total;
@@ -88,6 +108,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
       params.set("pageSize", String(PAGE_SIZE));
       params.set("sort", "dueDate");
       params.set("order", "asc");
+      if (debouncedSearch) params.set("search", debouncedSearch);
 
       try {
         const res = await fetch(`/api/payables?${params.toString()}`);
@@ -111,10 +132,13 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
         }
       }
     },
-    [filter],
+    [filter, debouncedSearch],
   );
 
+  // Reset everything when the drill-down filter changes (new chart click or close)
   useEffect(() => {
+    setSearchTerm("");
+    setDebouncedSearch("");
     if (!filter) {
       setPayables([]);
       setTotal(0);
@@ -175,6 +199,28 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
             </div>
           )}
 
+          {/* Search input — visible when there are results or an active search */}
+          {!loading && !error && (payables.length > 0 || debouncedSearch) && (
+            <div className="relative">
+              <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+              <Input
+                placeholder="Buscar por fornecedor, descrição, NF..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-9 pr-9"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm("")}
+                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-3 -translate-y-1/2"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Loading skeleton */}
           {loading && (
             <div className="space-y-2">
@@ -196,10 +242,12 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
             </div>
           )}
 
-          {/* Empty state */}
+          {/* Empty state — differentiated message for search vs no results */}
           {!loading && !error && payables.length === 0 && (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              Nenhum título encontrado para este filtro.
+              {debouncedSearch
+                ? "Nenhum resultado para esta busca."
+                : "Nenhum título encontrado para este filtro."}
             </p>
           )}
 
@@ -222,7 +270,16 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                 return (
                   <div
                     key={p.id}
-                    className="rounded-lg border bg-card p-3 transition-colors hover:bg-accent/50"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => router.push(`/dashboard/contas-a-pagar?edit=${p.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        router.push(`/dashboard/contas-a-pagar?edit=${p.id}`);
+                      }
+                    }}
+                    className="cursor-pointer rounded-lg border bg-card p-3 transition-colors hover:bg-accent/50"
                   >
                     {/* Top row: name/description + amount + status badge */}
                     <div className="flex items-center gap-3">
@@ -235,6 +292,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                           href={`/dashboard/fornecedores/${p.supplierId}`}
                           className="min-w-0 flex-1 truncate font-medium hover:underline"
                           title={primaryText}
+                          onClick={(e) => e.stopPropagation()}
                         >
                           {primaryText}
                         </Link>

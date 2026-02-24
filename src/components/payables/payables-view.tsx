@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Download, Plus, Search } from "lucide-react";
 import type { RowSelectionState } from "@tanstack/react-table";
@@ -45,6 +46,9 @@ interface PayablesViewProps {
 }
 
 export function PayablesView({ userRole }: PayablesViewProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [payables, setPayables] = useState<PayableListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -136,6 +140,23 @@ export function PayablesView({ userRole }: PayablesViewProps) {
   useEffect(() => {
     fetchPayables();
   }, [fetchPayables]);
+
+  // Read ?edit=ID from URL on mount — auto-opens the edit sheet (drill-down navigation)
+  const editParamHandled = useRef(false);
+  useEffect(() => {
+    if (editParamHandled.current) return;
+    const editId = searchParams.get("edit");
+    if (editId) {
+      editParamHandled.current = true;
+      setEditingPayableId(editId);
+      setSheetOpen(true);
+      // Clean the URL so refresh doesn't re-open the sheet
+      const cleaned = new URLSearchParams(searchParams.toString());
+      cleaned.delete("edit");
+      const qs = cleaned.toString();
+      router.replace(qs ? `?${qs}` : window.location.pathname);
+    }
+  }, [searchParams, router]);
 
   // --- Handlers ---
 
