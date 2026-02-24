@@ -43,12 +43,21 @@ export function parseImportDate(value: unknown): string | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
 
-    // "dd/mm/yyyy" — Brazilian format
+    // "dd/mm/yyyy" — Brazilian format (full year)
     const brMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (brMatch) {
       const dd = brMatch[1].padStart(2, "0");
       const mm = brMatch[2].padStart(2, "0");
       const yyyy = brMatch[3];
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // "dd/mm" — short Brazilian format (no year, infer current year)
+    const brShortMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})$/);
+    if (brShortMatch) {
+      const dd = brShortMatch[1].padStart(2, "0");
+      const mm = brShortMatch[2].padStart(2, "0");
+      const yyyy = String(new Date().getFullYear());
       return `${yyyy}-${mm}-${dd}`;
     }
 
