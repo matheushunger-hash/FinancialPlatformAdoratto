@@ -5,6 +5,55 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-24 — Issue #91: Buyer Budget Gauge — Overdue Awareness — CLOSED
+
+**What was built:**
+- Split the budget gauge progress bar into two segments: pending (green/yellow) + overdue (red)
+- Replaced single PENDING-only budget query with two non-overlapping queries using `status IN (PENDING, APPROVED)` — one for non-overdue (dueDate >= today) and one for overdue (dueDate < today)
+- Status logic change: overdue > 0 forces minimum "yellow" tier — buyers never see "green" while sitting on overdue debt
+- Summary text shows "(R$ 20k vencido)" parenthetical when overdue exists (hidden when over budget — redundant)
+- Count text split into "X pendentes, Y vencidos" with red coloring on overdue portion
+
+**Files changed:** 3 files, +71/-19 lines
+- `src/lib/dashboard/types.ts` — added `overdueOpen`, `overdueCount` to `BuyerBudgetData`
+- `src/app/api/dashboard/route.ts` — two non-overlapping queries (16a pending, 16b overdue), `rawStatus` + overdue bump logic
+- `src/components/dashboard/buyer-budget-gauge.tsx` — split bar with proportional widths, conditional border radius, overdue text
+
+**Mistakes caught:**
+1. No new mistakes — plan was specific enough to implement without issues
+
+**Patterns established:**
+- Non-overlapping query split: `dueDate >= today` vs `dueDate < today` within the same week range — avoids double-counting when extracting overdue from a broader "active" bucket
+- Proportional segment widths: `(segment / total) * fillPercent` — scales correctly both under and over budget
+- Conditional border radius for segmented bars: first segment `rounded-l-full`, last segment `rounded-r-full`, single segment gets both
+- Status floor pattern: compute `rawStatus` from thresholds first, then conditionally bump: `rawStatus === "green" && condition ? "yellow" : rawStatus`
+- Overdue text suppression: hide overdue callout when `isOver` — the "Excedido" message already conveys urgency
+
+---
+
+### 2026-02-24 — Issue #89: Daily Payments Chart — Summary Ribbon + Today Marker — CLOSED
+
+**What was built:**
+- Summary ribbon above the Daily Payments stacked bar chart showing period total and top 3 status subtotals with color-coded compact values (e.g., "R$ 120,5k total · R$ 80k pendente · R$ 25k pago")
+- Dashed "Hoje" vertical reference line at today's date, only visible when today has data in the chart
+- Enhanced tooltip with bold day total and `border-white/20` separator above the per-status breakdown
+- New `formatRibbonBRL()` helper for compact currency with R$ prefix (separate from axis `formatCompactBRL`)
+
+**Files changed:** 1 file, +81 lines
+- `src/components/dashboard/dashboard-charts.tsx` — `ReferenceLine` import, `formatRibbonBRL` helper, enhanced tooltip, computed ribbon data, summary ribbon JSX, conditional today marker
+
+**Mistakes caught:**
+1. No new mistakes — plan was specific enough to implement without issues
+
+**Patterns established:**
+- Summary ribbon recipe (client-side): compute `periodTotal` + `statusTotals` (top N) from chart data array → render `flex-wrap text-xs` with mid-dot separators and color-coded status values
+- `formatRibbonBRL()`: compact currency with R$ prefix — `R$ 120,5k` / `R$ 1,2M` — separate from axis `formatCompactBRL()` to avoid coupling
+- Recharts `<ReferenceLine x={todayStr}>` on categorical axis: only renders when the value exists as a data point — check with `data.some(d => d.date === todayStr)`
+- Tooltip day total: `payload.reduce((sum, p) => sum + (p.value || 0), 0)` sums all statuses, shown as bold line with `border-b border-white/20` separator
+- Fragment wrapper `<>...</>` when adding sibling elements (ribbon + chart) inside a ternary branch
+
+---
+
 ### 2026-02-24 — Issue #87: KPI Cards — Clickable Drill-Down — CLOSED
 
 **What was built:**

@@ -95,12 +95,14 @@ export interface AgingOverview {
 // =============================================================================
 
 export interface BuyerBudgetData {
-  totalOpen: number; // Sum of PENDING payable values due this week (R$)
+  totalOpen: number; // Sum of active payable values due this week (R$)
   limit: number; // Configured weekly spending limit (R$)
   utilization: number; // totalOpen / limit (0.0 – 1.0+, can exceed 1.0)
   remaining: number; // limit - totalOpen (negative if over)
   status: "green" | "yellow" | "red";
-  openCount: number; // Number of PENDING payables due this week
+  openCount: number; // Number of active payables due this week
+  overdueOpen: number; // Total R$ of overdue payables due this week
+  overdueCount: number; // Count of overdue payables due this week
   weekLabel: string; // "21/02 – 27/02" (display label for current week)
 }
 

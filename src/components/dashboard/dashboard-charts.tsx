@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -87,6 +88,17 @@ function formatCompactBRL(value: number): string {
   return value.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
 }
 
+// Compact format with R$ prefix for summary ribbons (e.g. "R$ 120,5k")
+function formatRibbonBRL(value: number): string {
+  if (value >= 1_000_000) {
+    return `R$ ${(value / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}M`;
+  }
+  if (value >= 1000) {
+    return `R$ ${(value / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}k`;
+  }
+  return `R$ ${value.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+}
+
 // Dark tooltip class string — dark navy in light mode, popover in dark mode
 const TOOLTIP_CLASS =
   "rounded-lg border-0 bg-[#0A2540] px-3 py-2.5 text-sm text-white shadow-xl dark:border dark:bg-popover dark:text-popover-foreground";
@@ -121,9 +133,15 @@ function CustomBarTooltip({
   const nonZero = payload.filter((p) => p.value > 0);
   if (nonZero.length === 0) return null;
 
+  // Day total across all statuses
+  const dayTotal = payload.reduce((sum, p) => sum + (p.value || 0), 0);
+
   return (
     <div className={TOOLTIP_CLASS}>
       <p className="mb-1 font-medium">{label ? formatDateLabel(label) : ""}</p>
+      <p className="mb-1.5 border-b border-white/20 pb-1.5 text-base font-semibold tabular-nums">
+        {formatBRL(dayTotal)}
+      </p>
       {nonZero.map((entry) => (
         <div key={entry.dataKey} className="flex items-center gap-2">
           <span
@@ -305,6 +323,29 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
   // Axis tick style — uses currentColor so it adapts to light/dark mode
   const tickStyle = { fill: "currentColor", fontSize: 12 };
 
+  // -- Summary ribbon data for daily payments chart --
+  const dailyData = charts.dailyPayments;
+
+  // Period total (all statuses, all days)
+  const periodTotal = dailyData.reduce(
+    (sum, day) => sum + ALL_STATUSES.reduce((s, st) => s + day[st], 0),
+    0,
+  );
+
+  // Per-status totals, sorted descending, filtered to non-zero — take top 3
+  const statusTotals = ALL_STATUSES
+    .map((status) => ({
+      status,
+      total: dailyData.reduce((s, day) => s + day[status], 0),
+    }))
+    .filter((s) => s.total > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 3);
+
+  // "Hoje" reference line — only when today falls within the data range
+  const todayStr = new Date().toISOString().split("T")[0];
+  const showTodayLine = dailyData.some((d) => d.date === todayStr);
+
   // Totals for donut center label (count + R$ value)
   const donutTotal = charts.statusDistribution.reduce(
     (sum, s) => sum + s.count,
@@ -328,6 +369,30 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
           {charts.dailyPayments.length === 0 ? (
             <EmptyChart message="Sem dados para este período." />
           ) : (
+            <>
+            {/* Summary ribbon */}
+            {periodTotal > 0 && (
+              <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  <span className="font-semibold text-foreground tabular-nums">
+                    {formatRibbonBRL(periodTotal)}
+                  </span>{" "}
+                  total
+                </span>
+                {statusTotals.map((s) => (
+                  <span key={s.status} className="flex items-center gap-1.5">
+                    <span>·</span>
+                    <span
+                      className="font-semibold tabular-nums"
+                      style={{ color: STATUS_COLORS[s.status] }}
+                    >
+                      {formatRibbonBRL(s.total)}
+                    </span>{" "}
+                    {STATUS_LABELS[s.status]?.toLowerCase()}
+                  </span>
+                ))}
+              </div>
+            )}
             <ResponsiveContainer width="100%" height={350}>
               <BarChart data={charts.dailyPayments}>
                 <CartesianGrid
@@ -353,6 +418,21 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                     STATUS_LABELS[value] ?? value
                   }
                 />
+                {showTodayLine && (
+                  <ReferenceLine
+                    x={todayStr}
+                    stroke="currentColor"
+                    strokeDasharray="4 4"
+                    strokeOpacity={0.5}
+                    label={{
+                      value: "Hoje",
+                      position: "top",
+                      fill: "currentColor",
+                      fontSize: 11,
+                      fontWeight: 500,
+                    }}
+                  />
+                )}
                 {ALL_STATUSES.map((status, index) => (
                   <Bar
                     key={status}
@@ -380,6 +460,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                 ))}
               </BarChart>
             </ResponsiveContainer>
+            </>
           )}
         </CardContent>
       </Card>

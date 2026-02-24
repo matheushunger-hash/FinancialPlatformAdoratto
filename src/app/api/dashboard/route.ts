@@ -233,7 +233,8 @@ export async function GET(request: NextRequest) {
       prevInsured,
       paidSparklineRaw,
       insuredSparklineRaw,
-      budgetRaw,
+      budgetPendingRaw,
+      budgetOverdueRaw,
       weeklyCalendarRaw,
       tenantSettings,
     ] = await Promise.all([
@@ -291,12 +292,23 @@ export async function GET(request: NextRequest) {
         _sum: { payValue: true },
       }),
 
-      // 16. PENDING payables due this week — for buyer budget gauge (#84)
+      // 16a. Active non-overdue payables due this week — today → Friday (#84, #91)
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: "PENDING",
-          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: today, lte: currentWeekEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 16b. Overdue active payables due this week — Saturday → yesterday (#91)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: currentWeekStart, lt: today },
         },
         _sum: { payValue: true },
         _count: true,
@@ -512,8 +524,10 @@ export async function GET(request: NextRequest) {
         ? Math.round(totalAgingDays / overduePayables.length)
         : 0;
 
-    // ---- Buyer budget gauge (#84) ----
-    const totalOpen = Number(budgetRaw._sum.payValue ?? 0);
+    // ---- Buyer budget gauge (#84, #91) ----
+    const pendingOpen = Number(budgetPendingRaw._sum.payValue ?? 0);
+    const overdueOpen = Number(budgetOverdueRaw._sum.payValue ?? 0);
+    const totalOpen = pendingOpen + overdueOpen;
     const limit = Number(tenantSettings?.buyerSpendingLimit ?? 350000);
     const utilization = limit > 0 ? totalOpen / limit : 0;
 
@@ -522,15 +536,20 @@ export async function GET(request: NextRequest) {
     const cweStr = currentWeekEnd.toISOString().split("T")[0];
     const weekLabel = `${cwsStr.slice(8, 10)}/${cwsStr.slice(5, 7)} – ${cweStr.slice(8, 10)}/${cweStr.slice(5, 7)}`;
 
+    // Status: utilization-based tiers, but overdue forces minimum "yellow"
+    const rawStatus: "green" | "yellow" | "red" =
+      utilization >= BUDGET_THRESHOLDS.yellow ? "red" :
+      utilization >= BUDGET_THRESHOLDS.green ? "yellow" : "green";
+
     const buyerBudget: BuyerBudgetData = {
       totalOpen,
       limit,
       utilization,
       remaining: limit - totalOpen,
-      status:
-        utilization >= BUDGET_THRESHOLDS.yellow ? "red" :
-        utilization >= BUDGET_THRESHOLDS.green ? "yellow" : "green",
-      openCount: budgetRaw._count,
+      status: rawStatus === "green" && overdueOpen > 0 ? "yellow" : rawStatus,
+      openCount: budgetPendingRaw._count + budgetOverdueRaw._count,
+      overdueOpen,
+      overdueCount: budgetOverdueRaw._count,
       weekLabel,
     };
 
