@@ -380,10 +380,23 @@ export async function POST(request: NextRequest) {
       // has the rolling date and "Mês Ref." has the real original due date.
       // Swap: dueDate ← refDate (original), overdueTrackedAt ← vencimento (rolling)
       const vencimentoDate = new Date(dueDate + "T12:00:00");
-      const parsedDueDate = (isSegurado && refDate)
-        ? new Date(refDate + "T12:00:00")
+      let resolvedRefDate = refDate;
+      // "dd/mm" dates infer current year, but segurado ref dates are always in the
+      // past — if the parsed date is in the future, it belongs to the previous year.
+      if (isSegurado && resolvedRefDate) {
+        const refObj = new Date(resolvedRefDate + "T12:00:00");
+        if (refObj > new Date()) {
+          refObj.setFullYear(refObj.getFullYear() - 1);
+          const yy = refObj.getFullYear();
+          const mm = String(refObj.getMonth() + 1).padStart(2, "0");
+          const dd = String(refObj.getDate()).padStart(2, "0");
+          resolvedRefDate = `${yy}-${mm}-${dd}`;
+        }
+      }
+      const parsedDueDate = (isSegurado && resolvedRefDate)
+        ? new Date(resolvedRefDate + "T12:00:00")
         : vencimentoDate;
-      const parsedOverdueTrackedAt = (isSegurado && refDate)
+      const parsedOverdueTrackedAt = (isSegurado && resolvedRefDate)
         ? vencimentoDate
         : null;
 
