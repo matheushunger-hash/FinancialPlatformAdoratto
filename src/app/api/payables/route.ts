@@ -80,8 +80,11 @@ export async function GET(request: NextRequest) {
 
   // Filters — validated against whitelists, unknown values silently ignored
   const statusParam = searchParams.get("status") || "";
-  if (VALID_STATUSES.includes(statusParam)) {
-    conditions.push({ status: statusParam });
+  const statuses = statusParam.split(",").filter(s => VALID_STATUSES.includes(s));
+  if (statuses.length === 1) {
+    conditions.push({ status: statuses[0] });
+  } else if (statuses.length > 1) {
+    conditions.push({ status: { in: statuses } });
   }
 
   const tagParam = searchParams.get("tag")?.trim() || "";

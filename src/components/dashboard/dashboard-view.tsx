@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { KPICards } from "@/components/dashboard/kpi-cards";
 import { AgingCards } from "@/components/dashboard/aging-cards";
+import { BuyerBudgetGauge } from "@/components/dashboard/buyer-budget-gauge";
+import { WeeklyCalendar } from "@/components/dashboard/weekly-calendar";
 import { DashboardCharts } from "@/components/dashboard/dashboard-charts";
 import { DrillDownSheet } from "@/components/dashboard/drill-down-sheet";
 import { PeriodSelector } from "@/components/dashboard/period-selector";
@@ -84,6 +86,9 @@ export function DashboardView() {
         loading={loading}
         error={error}
         keys={["totalPayable", "overdue", "dueSoon"]}
+        from={from}
+        to={to}
+        onDrillDown={setDrillDown}
       />
 
       {/* Aging breakdown — always-live, current overdue state (#78) */}
@@ -91,6 +96,23 @@ export function DashboardView() {
         data={data?.agingOverview ?? null}
         loading={loading}
       />
+
+      {/* Buyer budget + weekly calendar — always-live (#84) */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <div className="lg:col-span-2">
+          <BuyerBudgetGauge
+            data={data?.buyerBudget ?? null}
+            loading={loading}
+          />
+        </div>
+        <div className="lg:col-span-3">
+          <WeeklyCalendar
+            data={data?.weeklyCalendar ?? null}
+            loading={loading}
+            onDrillDown={setDrillDown}
+          />
+        </div>
+      </div>
 
       {/* Period selector — visually separates frozen KPIs from filtered content */}
       <PeriodSelector from={from} to={to} onChange={handlePeriodChange} />
@@ -101,6 +123,9 @@ export function DashboardView() {
         loading={loading}
         error={error}
         keys={["paidThisMonth", "dueInPeriod", "insuredInPeriod"]}
+        from={from}
+        to={to}
+        onDrillDown={setDrillDown}
       />
       <DashboardCharts
         charts={data?.charts ?? null}

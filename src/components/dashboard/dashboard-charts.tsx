@@ -320,8 +320,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                       const date = (entry as DailyPaymentData).date;
                       if (!date) return;
                       onDrillDown({
-                        title: `Pagamentos — ${formatDateLabel(date)} (${STATUS_LABELS[status] ?? status})`,
-                        status,
+                        title: `Pagamentos — ${formatDateLabel(date)}`,
                         dueDateFrom: date,
                         dueDateTo: date,
                       });

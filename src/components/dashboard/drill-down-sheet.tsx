@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Loader2, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Calendar, ExternalLink, FileSearch, Loader2, Search, X } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 import { STATUS_CONFIG } from "@/lib/payables/types";
 import type { PayableListItem, PayablesListResponse } from "@/lib/payables/types";
 import type { DrillDownFilter } from "@/lib/dashboard/types";
@@ -30,6 +31,24 @@ import type { DrillDownFilter } from "@/lib/dashboard/types";
 // =============================================================================
 
 const PAGE_SIZE = 15;
+
+// Status → left border color. Complete class strings so Tailwind can detect them.
+const STATUS_BORDER: Record<string, string> = {
+  PENDING: "border-l-amber-500",
+  APPROVED: "border-l-blue-500",
+  PAID: "border-l-green-500",
+  OVERDUE: "border-l-red-500",
+  REJECTED: "border-l-gray-500",
+  CANCELLED: "border-l-gray-400",
+};
+
+// Sort options available in the drill-down panel (key must match API SORT_MAP)
+const SORT_OPTIONS = [
+  { key: "dueDate", label: "Vencimento" },
+  { key: "payValue", label: "Valor" },
+  { key: "supplierName", label: "Fornecedor" },
+  { key: "status", label: "Status" },
+] as const;
 
 function formatBRL(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -47,6 +66,7 @@ function buildPayablesUrl(filter: DrillDownFilter): string {
   if (filter.supplierId) params.set("supplierId", filter.supplierId);
   if (filter.status) params.set("status", filter.status);
   if (filter.overdue) params.set("overdue", "true");
+  if (filter.tag) params.set("tag", filter.tag);
   params.set("dueDateFrom", filter.dueDateFrom);
   params.set("dueDateTo", filter.dueDateTo);
   return `/dashboard/contas-a-pagar?${params.toString()}`;
@@ -83,6 +103,21 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
     };
   }, [searchTerm]);
 
+  // Sort state — default to dueDate ascending (soonest first)
+  const [sortField, setSortField] = useState("dueDate");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  function handleSortChange(field: string) {
+    if (field === sortField) {
+      // Same field — toggle direction
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      // New field — default to asc, except dueDate defaults to desc
+      setSortField(field);
+      setSortOrder(field === "dueDate" ? "asc" : "asc");
+    }
+  }
+
   // Derived state
   const hasMore = payables.length < total;
   const totalValue = payables.reduce((sum, p) => sum + Number(p.payValue), 0);
@@ -102,12 +137,13 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
       if (filter.supplierId) params.set("supplierId", filter.supplierId);
       if (filter.status) params.set("status", filter.status);
       if (filter.overdue) params.set("overdue", "true");
+      if (filter.tag) params.set("tag", filter.tag);
       params.set("dueDateFrom", filter.dueDateFrom);
       params.set("dueDateTo", filter.dueDateTo);
       params.set("page", String(pageToFetch));
       params.set("pageSize", String(PAGE_SIZE));
-      params.set("sort", "dueDate");
-      params.set("order", "asc");
+      params.set("sort", sortField);
+      params.set("order", sortOrder);
       if (debouncedSearch) params.set("search", debouncedSearch);
 
       try {
@@ -132,13 +168,26 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
         }
       }
     },
-    [filter, debouncedSearch],
+    [filter, debouncedSearch, sortField, sortOrder],
   );
 
-  // Reset everything when the drill-down filter changes (new chart click or close)
+  // Track whether filter actually changed vs. fetchPayables changing due to sort/search.
+  // Without this ref, changing sort would trigger the reset (since fetchPayables is recreated),
+  // which would clobber the user's sort choice — a dependency cycle bug.
+  const prevFilterRef = useRef(filter);
+
   useEffect(() => {
-    setSearchTerm("");
-    setDebouncedSearch("");
+    const isFilterChange = filter !== prevFilterRef.current;
+    prevFilterRef.current = filter;
+
+    // Only reset search/sort when the drill-down filter changes (new chart click or close)
+    if (isFilterChange) {
+      setSearchTerm("");
+      setDebouncedSearch("");
+      setSortField("dueDate");
+      setSortOrder("asc");
+    }
+
     if (!filter) {
       setPayables([]);
       setTotal(0);
@@ -146,6 +195,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
       setError(null);
       return;
     }
+
     fetchPayables(1, false);
   }, [filter, fetchPayables]);
 
@@ -159,7 +209,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-2xl overflow-y-auto">
+      <SheetContent className="sm:max-w-2xl">
         <SheetHeader>
           <SheetTitle>{filter?.title ?? "Detalhamento"}</SheetTitle>
           <SheetDescription>
@@ -169,38 +219,36 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="px-4 pb-4 space-y-4">
-          {/* Error state */}
-          {error && (
-            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-              {error}
-            </div>
-          )}
+        {/* Error state */}
+        {error && (
+          <div className="mx-4 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+            {error}
+          </div>
+        )}
 
-          {/* Summary bar — shows total value and count */}
-          {!loading && !error && payables.length > 0 && (
-            <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
-              <div>
-                <p className="text-2xl font-semibold tabular-nums">
-                  {formatBRL(totalValue)}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {total} título{total !== 1 ? "s" : ""} encontrado{total !== 1 ? "s" : ""}
-                  {payables.length < total && (
-                    <span> ({payables.length} carregados)</span>
-                  )}
-                </p>
+        {/* Summary + Search — stays fixed while cards scroll underneath */}
+        {!loading && !error && (payables.length > 0 || debouncedSearch) && (
+          <div className="space-y-3 border-b px-4 pb-4">
+            {payables.length > 0 && (
+              <div className="flex items-center justify-between rounded-lg bg-muted/50 px-4 py-3">
+                <div>
+                  <p className="text-2xl font-semibold tabular-nums">
+                    {formatBRL(totalValue)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {total} título{total !== 1 ? "s" : ""} encontrado{total !== 1 ? "s" : ""}
+                    {payables.length < total && (
+                      <span> ({payables.length} carregados)</span>
+                    )}
+                  </p>
+                </div>
+                {statusCfg && (
+                  <Badge variant={statusCfg.variant} className="text-sm">
+                    {statusCfg.label}
+                  </Badge>
+                )}
               </div>
-              {statusCfg && (
-                <Badge variant={statusCfg.variant} className="text-sm">
-                  {statusCfg.label}
-                </Badge>
-              )}
-            </div>
-          )}
-
-          {/* Search input — visible when there are results or an active search */}
-          {!loading && !error && (payables.length > 0 || debouncedSearch) && (
+            )}
             <div className="relative">
               <Search className="text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
               <Input
@@ -219,13 +267,39 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                 </button>
               )}
             </div>
-          )}
+            {/* Sort pills */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-xs text-muted-foreground">Ordenar:</span>
+              {SORT_OPTIONS.map((opt) => {
+                const isActive = sortField === opt.key;
+                return (
+                  <Button
+                    key={opt.key}
+                    variant={isActive ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 gap-1 px-2.5 text-xs"
+                    onClick={() => handleSortChange(opt.key)}
+                  >
+                    {opt.label}
+                    {isActive && (
+                      sortOrder === "asc"
+                        ? <ArrowUp className="h-3 w-3" />
+                        : <ArrowDown className="h-3 w-3" />
+                    )}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
+        {/* Scrollable content area — only this section scrolls */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
           {/* Loading skeleton */}
           {loading && (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="rounded-lg border p-3 space-y-2">
+                <div key={i} className="rounded-lg border border-l-4 border-l-muted p-4 space-y-2">
                   <div className="flex items-center justify-between">
                     <Skeleton className="h-5 w-40" />
                     <div className="flex items-center gap-2">
@@ -242,13 +316,16 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
             </div>
           )}
 
-          {/* Empty state — differentiated message for search vs no results */}
+          {/* Empty state with icon */}
           {!loading && !error && payables.length === 0 && (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {debouncedSearch
-                ? "Nenhum resultado para esta busca."
-                : "Nenhum título encontrado para este filtro."}
-            </p>
+            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+              <FileSearch className="mb-3 h-10 w-10 opacity-40" />
+              <p className="text-sm">
+                {debouncedSearch
+                  ? "Nenhum resultado para esta busca."
+                  : "Nenhum título encontrado para este filtro."}
+              </p>
+            </div>
           )}
 
           {/* Card list */}
@@ -256,12 +333,13 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
             <div className="space-y-2">
               {payables.map((p) => {
                 const cfg = STATUS_CONFIG[p.status.toUpperCase()];
-                // For supplier drilldowns, show description as the primary text
-                // (supplier name is already in the Sheet title)
+                const isOverdue = p.daysOverdue != null && p.daysOverdue > 0;
+                const borderColor = isOverdue
+                  ? "border-l-red-500"
+                  : (STATUS_BORDER[p.status.toUpperCase()] ?? "border-l-gray-300");
                 const primaryText = isSupplierDrillDown
                   ? p.description
                   : (p.supplierName ?? p.payee ?? "—");
-                // Secondary text: show description unless it matches the primary
                 const secondaryText =
                   !isSupplierDrillDown && p.description !== p.supplierName
                     ? p.description
@@ -279,9 +357,12 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                         router.push(`/dashboard/contas-a-pagar?edit=${p.id}`);
                       }
                     }}
-                    className="cursor-pointer rounded-lg border bg-card p-3 transition-colors hover:bg-accent/50"
+                    className={cn(
+                      "cursor-pointer rounded-lg border border-l-4 bg-card p-4 transition-colors hover:bg-accent/50",
+                      borderColor,
+                    )}
                   >
-                    {/* Top row: name/description + amount + status badge */}
+                    {/* Row 1: name + amount + badge */}
                     <div className="flex items-center gap-3">
                       {isSupplierDrillDown || !p.supplierId ? (
                         <span className="min-w-0 flex-1 truncate font-medium" title={primaryText}>
@@ -304,14 +385,20 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                         {cfg?.label ?? p.status}
                       </Badge>
                     </div>
-                    {/* Bottom row: secondary text + due date */}
-                    <div className="mt-1 flex items-center gap-3">
+                    {/* Row 2: secondary text + date + overdue pill */}
+                    <div className="mt-1.5 flex items-center gap-2">
                       <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
                         {secondaryText ?? "\u00A0"}
                       </span>
-                      <span className="shrink-0 text-sm text-muted-foreground whitespace-nowrap">
+                      <span className="shrink-0 flex items-center gap-1 text-sm text-muted-foreground whitespace-nowrap">
+                        <Calendar className="h-3.5 w-3.5" />
                         {formatDate(p.dueDate)}
                       </span>
+                      {isOverdue && (
+                        <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive whitespace-nowrap">
+                          {p.daysOverdue}d vencido
+                        </span>
+                      )}
                     </div>
                   </div>
                 );

@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
 import type {
   DashboardResponse,
   DailyPaymentData,
+  BuyerBudgetData,
+  WeeklyPaymentData,
+  UrgencyTier,
 } from "@/lib/dashboard/types";
 
 // =============================================================================
@@ -17,6 +21,9 @@ import type {
 //   from (ISO date, e.g. "2026-02-01") — defaults to 1st of current month
 //   to   (ISO date, e.g. "2026-02-28") — defaults to last day of current month
 // =============================================================================
+
+// Budget utilization thresholds: green < 80%, yellow 80-95%, red > 95%
+const BUDGET_THRESHOLDS = { green: 0.80, yellow: 0.95 };
 
 // Compute % change between current and previous values
 function computeDelta(current: number, previous: number): number {
@@ -38,6 +45,15 @@ function buildSparkline(
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return values;
+}
+
+// Determine urgency tier for a weekly bucket based on overdue ratio and aging
+function computeUrgencyTier(w: { overdueValue: number; totalValue: number; maxDaysOverdue: number }): UrgencyTier {
+  if (w.overdueValue === 0) return "green";
+  const ratio = w.totalValue > 0 ? w.overdueValue / w.totalValue : 0;
+  if (ratio > 0.5 || w.maxDaysOverdue > 60) return "red";
+  if (ratio > 0.2 || w.maxDaysOverdue > 30) return "orange";
+  return "yellow";
 }
 
 export async function GET(request: NextRequest) {
@@ -77,12 +93,19 @@ export async function GET(request: NextRequest) {
   sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
   sevenDaysFromNow.setHours(23, 59, 59, 999);
 
+  // Weekly calendar: Sat–Fri weeks (#84)
+  const currentWeekStart = startOfWeek(today, { weekStartsOn: 6 });
+  const currentWeekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 6 });
+  const lastWeekEnd = endOfWeek(addWeeks(currentWeekStart, 4), { weekStartsOn: 6 });
+
   // Common filter: only this tenant, only active statuses (not yet paid/cancelled)
   const activeStatuses = ["PENDING", "APPROVED"] as const;
   const tenantScope = { tenantId: ctx.tenantId };
 
   try {
-    // Run all 15 queries in parallel for best performance
+    // Split queries into two batches to stay within pool connection limits.
+    // Batch 1: core KPIs + chart data (10 queries)
+    // Batch 2: deltas, sparklines, budget gauge, weekly calendar (8 queries)
     const [
       totalPayable,
       overdue,
@@ -94,13 +117,6 @@ export async function GET(request: NextRequest) {
       topSuppliersRaw,
       dueInPeriod,
       insuredInPeriod,
-      // Previous period deltas (queries 11-13)
-      prevPaid,
-      prevDueInPeriod,
-      prevInsured,
-      // Sparkline data (queries 14-15)
-      paidSparklineRaw,
-      insuredSparklineRaw,
     ] = await Promise.all([
       // 1. Total a Pagar — all PENDING + APPROVED payables
       prisma.payable.aggregate({
@@ -207,7 +223,19 @@ export async function GET(request: NextRequest) {
         _sum: { payValue: true },
         _count: true,
       }),
+    ]);
 
+    // Batch 2: deltas, sparklines, budget gauge, weekly calendar
+    const [
+      prevPaid,
+      prevDueInPeriod,
+      prevInsured,
+      paidSparklineRaw,
+      insuredSparklineRaw,
+      budgetRaw,
+      weeklyCalendarRaw,
+      tenantSettings,
+    ] = await Promise.all([
       // 11. Previous period — paid (for delta comparison)
       prisma.payable.aggregate({
         where: {
@@ -260,6 +288,36 @@ export async function GET(request: NextRequest) {
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
+      }),
+
+      // 16. PENDING payables due this week — for buyer budget gauge (#84)
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: "PENDING",
+          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 17. Active payables grouped by dueDate — for weekly calendar (#84)
+      // Includes both PENDING and APPROVED so we can classify overdue vs pending
+      prisma.payable.groupBy({
+        by: ["dueDate"],
+        where: {
+          ...tenantScope,
+          status: { in: [...activeStatuses] },
+          dueDate: { gte: currentWeekStart, lte: lastWeekEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 18. Tenant spending limit (#84)
+      prisma.tenantSettings.findUnique({
+        where: { tenantId: ctx.tenantId },
+        select: { buyerSpendingLimit: true },
       }),
     ]);
 
@@ -391,6 +449,80 @@ export async function GET(request: NextRequest) {
         ? Math.round(totalAgingDays / overduePayables.length)
         : 0;
 
+    // ---- Buyer budget gauge (#84) ----
+    const totalOpen = Number(budgetRaw._sum.payValue ?? 0);
+    const limit = Number(tenantSettings?.buyerSpendingLimit ?? 350000);
+    const utilization = limit > 0 ? totalOpen / limit : 0;
+
+    // Build current week label for the gauge header
+    const cwsStr = currentWeekStart.toISOString().split("T")[0];
+    const cweStr = currentWeekEnd.toISOString().split("T")[0];
+    const weekLabel = `${cwsStr.slice(8, 10)}/${cwsStr.slice(5, 7)} – ${cweStr.slice(8, 10)}/${cweStr.slice(5, 7)}`;
+
+    const buyerBudget: BuyerBudgetData = {
+      totalOpen,
+      limit,
+      utilization,
+      remaining: limit - totalOpen,
+      status:
+        utilization >= BUDGET_THRESHOLDS.yellow ? "red" :
+        utilization >= BUDGET_THRESHOLDS.green ? "yellow" : "green",
+      openCount: budgetRaw._count,
+      weekLabel,
+    };
+
+    // ---- Weekly calendar bucketing (#84) ----
+    const weeklyCalendar: WeeklyPaymentData[] = [];
+    for (let i = 0; i < 5; i++) {
+      const ws = addWeeks(currentWeekStart, i);
+      const we = endOfWeek(ws, { weekStartsOn: 6 });
+      const wsStr = ws.toISOString().split("T")[0];
+      const weStr = we.toISOString().split("T")[0];
+      const dd1 = wsStr.slice(8, 10), mm1 = wsStr.slice(5, 7);
+      const dd2 = weStr.slice(8, 10), mm2 = weStr.slice(5, 7);
+      weeklyCalendar.push({
+        weekStart: wsStr,
+        weekEnd: weStr,
+        label: `${dd1}/${mm1} – ${dd2}/${mm2}`,
+        value: 0,
+        count: 0,
+        isCurrent: i === 0,
+        overdueValue: 0,
+        overdueCount: 0,
+        totalValue: 0,
+        totalCount: 0,
+        urgencyTier: "green",
+        maxDaysOverdue: 0,
+      });
+    }
+    for (const row of weeklyCalendarRaw) {
+      const dateMs = row.dueDate.getTime();
+      const bucket = weeklyCalendar.find(
+        (w) =>
+          dateMs >= new Date(w.weekStart + "T00:00:00.000Z").getTime() &&
+          dateMs <= new Date(w.weekEnd + "T23:59:59.999Z").getTime(),
+      );
+      if (bucket) {
+        const rowValue = Number(row._sum.payValue ?? 0);
+        const isOverdue = row.dueDate < today;
+        if (isOverdue) {
+          bucket.overdueValue += rowValue;
+          bucket.overdueCount += row._count;
+          const daysOver = Math.floor((todayMs - row.dueDate.getTime()) / 86_400_000);
+          if (daysOver > bucket.maxDaysOverdue) bucket.maxDaysOverdue = daysOver;
+        } else {
+          bucket.value += rowValue;
+          bucket.count += row._count;
+        }
+      }
+    }
+    // Compute derived fields for each week bucket
+    for (const bucket of weeklyCalendar) {
+      bucket.totalValue = bucket.value + bucket.overdueValue;
+      bucket.totalCount = bucket.count + bucket.overdueCount;
+      bucket.urgencyTier = computeUrgencyTier(bucket);
+    }
+
     // ---- Build response ----
     const response: DashboardResponse = {
       totalPayable: {
@@ -435,6 +567,8 @@ export async function GET(request: NextRequest) {
         statusDistribution,
         topSuppliers,
       },
+      buyerBudget,
+      weeklyCalendar,
       agingOverview: {
         avgDaysOverdue,
         interestExposure: Math.round(interestExposure * 100) / 100,

@@ -19,7 +19,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type { DashboardKPIs, KPICard } from "@/lib/dashboard/types";
+import type { DashboardKPIs, DrillDownFilter, KPICard } from "@/lib/dashboard/types";
 
 // =============================================================================
 // KPI Cards Component — Stripe/Linear aesthetic (#39)
@@ -28,19 +28,90 @@ import type { DashboardKPIs, KPICard } from "@/lib/dashboard/types";
 // delta % badge and sparkline mini-chart for period-filtered KPIs.
 // =============================================================================
 
-// Icon configuration for each KPI card (no color config — clean surfaces only)
+// Helper: get today's date as YYYY-MM-DD (local time — avoids UTC shift in Brazil)
+function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Configuration for each KPI card: icon + drill-down filter builder
 interface CardConfig {
   key: keyof DashboardKPIs;
   icon: LucideIcon;
+  buildFilter: (from: string, to: string) => DrillDownFilter;
 }
 
 const CARD_CONFIGS: CardConfig[] = [
-  { key: "totalPayable", icon: DollarSign },
-  { key: "overdue", icon: AlertTriangle },
-  { key: "dueSoon", icon: Clock },
-  { key: "paidThisMonth", icon: CheckCircle },
-  { key: "dueInPeriod", icon: CalendarClock },
-  { key: "insuredInPeriod", icon: ShieldCheck },
+  {
+    key: "totalPayable",
+    icon: DollarSign,
+    buildFilter: (from, to) => ({
+      title: "Total a Pagar",
+      status: "PENDING,APPROVED",
+      dueDateFrom: from,
+      dueDateTo: to,
+    }),
+  },
+  {
+    key: "overdue",
+    icon: AlertTriangle,
+    buildFilter: () => {
+      const today = toISODate(new Date());
+      return {
+        title: "Vencidos",
+        overdue: true,
+        dueDateFrom: "2020-01-01",
+        dueDateTo: today,
+      };
+    },
+  },
+  {
+    key: "dueSoon",
+    icon: Clock,
+    buildFilter: () => {
+      const now = new Date();
+      const today = toISODate(now);
+      const in7 = new Date(now.getTime() + 7 * 86_400_000);
+      return {
+        title: "A Vencer — Próximos 7 Dias",
+        status: "PENDING,APPROVED",
+        dueDateFrom: today,
+        dueDateTo: toISODate(in7),
+      };
+    },
+  },
+  {
+    key: "paidThisMonth",
+    icon: CheckCircle,
+    buildFilter: (from, to) => ({
+      title: "Pagos no Período",
+      status: "PAID",
+      dueDateFrom: from,
+      dueDateTo: to,
+    }),
+  },
+  {
+    key: "dueInPeriod",
+    icon: CalendarClock,
+    buildFilter: (from, to) => ({
+      title: "A Vencer no Período",
+      status: "PENDING,APPROVED",
+      dueDateFrom: from,
+      dueDateTo: to,
+    }),
+  },
+  {
+    key: "insuredInPeriod",
+    icon: ShieldCheck,
+    buildFilter: (from, to) => ({
+      title: "Segurado no Período",
+      tag: "segurado",
+      dueDateFrom: from,
+      dueDateTo: to,
+    }),
+  },
 ];
 
 function formatBRL(value: number): string {
@@ -128,9 +199,12 @@ interface KPICardsProps {
   loading: boolean;
   error: string | null;
   keys?: (keyof DashboardKPIs)[]; // Optional filter — show only these cards
+  from?: string; // Period start (for drill-down filter builders)
+  to?: string; // Period end (for drill-down filter builders)
+  onDrillDown?: (filter: DrillDownFilter) => void; // Drill-down callback
 }
 
-export function KPICards({ data, loading, error, keys }: KPICardsProps) {
+export function KPICards({ data, loading, error, keys, from, to, onDrillDown }: KPICardsProps) {
   // Filter configs based on keys prop (show all if not provided)
   const configs = keys
     ? CARD_CONFIGS.filter((c) => keys.includes(c.key))
@@ -166,7 +240,17 @@ export function KPICards({ data, loading, error, keys }: KPICardsProps) {
         const Icon = config.icon;
 
         return (
-          <Card key={config.key} className="rounded-xl shadow-sm">
+          <Card
+            key={config.key}
+            className={cn(
+              "rounded-xl shadow-sm",
+              onDrillDown && "cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]",
+            )}
+            onClick={() => {
+              if (!onDrillDown || !from || !to) return;
+              onDrillDown(config.buildFilter(from, to));
+            }}
+          >
             <CardContent className="p-6">
               {/* Label row with icon */}
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">

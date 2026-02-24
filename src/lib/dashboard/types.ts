@@ -57,6 +57,7 @@ export interface DrillDownFilter {
   supplierId?: string; // for supplier drill-down
   status?: string; // for stacked bar drill-down
   overdue?: boolean; // for aging bracket drill-down (PENDING/APPROVED + past due)
+  tag?: string; // for tag-based drill-down (e.g., "segurado")
   dueDateFrom: string; // ISO date "YYYY-MM-DD"
   dueDateTo: string; // ISO date "YYYY-MM-DD"
 }
@@ -84,6 +85,41 @@ export interface AgingOverview {
   agingBrackets: AgingBracket[];
 }
 
+// =============================================================================
+// Buyer Budget Types (#84)
+// =============================================================================
+
+export interface BuyerBudgetData {
+  totalOpen: number; // Sum of PENDING payable values due this week (R$)
+  limit: number; // Configured weekly spending limit (R$)
+  utilization: number; // totalOpen / limit (0.0 – 1.0+, can exceed 1.0)
+  remaining: number; // limit - totalOpen (negative if over)
+  status: "green" | "yellow" | "red";
+  openCount: number; // Number of PENDING payables due this week
+  weekLabel: string; // "21/02 – 27/02" (display label for current week)
+}
+
+// =============================================================================
+// Weekly Calendar Types (#84)
+// =============================================================================
+
+export type UrgencyTier = "green" | "yellow" | "orange" | "red";
+
+export interface WeeklyPaymentData {
+  weekStart: string; // "2026-02-21" (ISO date, Saturday)
+  weekEnd: string; // "2026-02-27" (ISO date, Friday)
+  label: string; // "21/02 – 27/02" (display label)
+  value: number; // Sum of non-overdue pending payValues in R$
+  count: number; // Number of non-overdue pending payables
+  isCurrent: boolean; // true for the week containing today
+  overdueValue: number; // Sum of overdue payValues in this week
+  overdueCount: number; // Count of overdue payables in this week
+  totalValue: number; // value + overdueValue (convenience for tooltip/ribbon)
+  totalCount: number; // count + overdueCount
+  urgencyTier: UrgencyTier; // Color tier based on overdue ratio + max aging
+  maxDaysOverdue: number; // Worst aging in this week (0 if no overdue)
+}
+
 // Full API response — extends KPIs with chart data + aging overview
 export interface DashboardResponse extends DashboardKPIs {
   charts: {
@@ -92,4 +128,6 @@ export interface DashboardResponse extends DashboardKPIs {
     topSuppliers: TopSupplier[];
   };
   agingOverview: AgingOverview;
+  buyerBudget: BuyerBudgetData;
+  weeklyCalendar: WeeklyPaymentData[];
 }
