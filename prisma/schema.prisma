@@ -161,8 +161,9 @@ model Payable {
   payValue      Decimal         @map("pay_value") @db.Decimal(12, 2) // Valor a pagar
   jurosMulta    Decimal?        @default(0) @map("juros_multa") @db.Decimal(12, 2) // Juros/Multa (payValue - amount)
   issueDate     DateTime        @map("issue_date") @db.Date // Data de entrada
-  dueDate       DateTime        @map("due_date") @db.Date
-  status        PayableStatus   @default(PENDING)
+  dueDate          DateTime        @map("due_date") @db.Date
+  overdueTrackedAt DateTime?       @map("overdue_tracked_at") @db.Date // Rolling tracking date for overdue re-imports
+  status           PayableStatus   @default(PENDING)
   category      PayableCategory
   paymentMethod PaymentMethod   @map("payment_method")
   invoiceNumber String?         @map("invoice_number") // Número NF-e

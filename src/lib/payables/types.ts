@@ -14,6 +14,7 @@ export interface PayableListItem {
   category: "REVENDA" | "DESPESA";
   issueDate: string;
   dueDate: string;
+  overdueTrackedAt: string | null; // Rolling tracking date for overdue re-imports
   amount: string; // Decimal serialized as string
   payValue: string;
   jurosMulta: string; // Decimal serialized as string (payValue - amount, min 0)

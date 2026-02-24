@@ -167,6 +167,7 @@ export async function GET(request: NextRequest) {
         category: p.category,
         issueDate: p.issueDate.toISOString(),
         dueDate: p.dueDate.toISOString(),
+        overdueTrackedAt: p.overdueTrackedAt?.toISOString() ?? null,
         amount: p.amount.toString(),
         payValue: p.payValue.toString(),
         jurosMulta: p.jurosMulta?.toString() ?? "0",

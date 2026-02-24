@@ -365,8 +365,9 @@ export async function POST(request: NextRequest) {
       // Update mode: two-tier matching strategy
       // Tier 1: invoiceNumber (stable across date/amount changes)
       // Tier 2: supplier + amount + dueDate (fallback when no invoice number)
+      // dueDate is NEVER overwritten — overdueTrackedAt captures rolling dates (#96)
       if (updateExisting && resolvedSupplierId) {
-        let existing: { id: string } | null = null;
+        let existing: { id: string; dueDate: Date } | null = null;
         let matchedByInvoice = false;
 
         // Tier 1: Match by invoice number (stable across date/amount changes)
@@ -377,7 +378,7 @@ export async function POST(request: NextRequest) {
               supplierId: resolvedSupplierId,
               invoiceNumber: invoiceStr,
             },
-            select: { id: true },
+            select: { id: true, dueDate: true },
           });
           if (existing) matchedByInvoice = true;
         }
@@ -391,17 +392,20 @@ export async function POST(request: NextRequest) {
               amount,
               dueDate: parsedDueDate,
             },
-            select: { id: true },
+            select: { id: true, dueDate: true },
           });
         }
 
         if (existing) {
+          // Only set overdueTrackedAt when the import date differs from the original dueDate
+          const dateChanged = existing.dueDate.getTime() !== parsedDueDate.getTime();
+
           await prisma.payable.update({
             where: { id: existing.id },
             data: matchedByInvoice
               ? {
-                  // Confident match — safe to update all financial fields
-                  dueDate: parsedDueDate,
+                  // Confident match — safe to update financial fields (but NOT dueDate)
+                  ...(dateChanged ? { overdueTrackedAt: parsedDueDate } : {}),
                   issueDate: parsedIssueDate,
                   amount,
                   payValue,
@@ -412,6 +416,7 @@ export async function POST(request: NextRequest) {
                 }
               : {
                   // Heuristic match — conservative update only
+                  ...(dateChanged ? { overdueTrackedAt: parsedDueDate } : {}),
                   status,
                   paidAt,
                   jurosMulta,
