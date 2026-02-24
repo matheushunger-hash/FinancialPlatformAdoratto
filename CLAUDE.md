@@ -141,7 +141,7 @@ Standard workflow for completing an ADR/feature:
 - **Force-status**: separate code path from transitions, ADMIN-only, validates against whitelist
 - **Detail API route**: `GET /api/payables/[id]` returns extended type (adds metadata) — separate from list to keep responses lean
 - **Server-side CSV export**: `GET /api/export` with same filter params as list, `take: MAX_EXPORT_ROWS` cap, `Content-Type: text/csv`
-- **Import update mode**: match existing payables by `tenantId + supplierId + amount + dueDate` → update if found, create if not
+- **Import update mode**: match existing payables by `tenantId + supplierId + amount + dueDate` → update if found, create if not. `dueDate` is NEVER overwritten after creation — rolling dates go to `overdueTrackedAt` (#96)
 
 ### Tables (TanStack)
 - `manualSorting: true` + `manualPagination: true` for server-side data — TanStack manages UI state only
@@ -225,7 +225,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #61 (AR Schema Models), Issue #62 (RPInfo Flex XLSX Parser), Issue #63 (AR Import Service), Issue #48 (Forward-Looking Date Presets), Issue #53 (Unify Suppliers Table), Issue #61 (AR Schema Models), Issue #87 (KPI Cards Clickable Drill-Down), Issue #88 (Top 10 Suppliers Stacked Overdue), Issue #90 (Donut Drill-Down + Values)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #61 (AR Schema Models), Issue #62 (RPInfo Flex XLSX Parser), Issue #63 (AR Import Service), Issue #48 (Forward-Looking Date Presets), Issue #53 (Unify Suppliers Table), Issue #61 (AR Schema Models), Issue #87 (KPI Cards Clickable Drill-Down), Issue #88 (Top 10 Suppliers Stacked Overdue), Issue #90 (Donut Drill-Down + Values), Issue #96 (Import Dedup — overdueTrackedAt)
 
 Full session history: `docs/session-log.md`
 
@@ -239,6 +239,19 @@ Full session history: `docs/session-log.md`
 - "Ver todos" link pattern: Sheet footer links to the full page (`/contas-a-pagar?filters...`) with pre-applied URL params via `URLSearchParams`
 - Smart column hiding in drill-down: supplier drilldowns show description as primary text (supplier already in Sheet title), hide secondary text when it matches primary
 - Orchestrator drill-down state: `useState<DrillDownFilter | null>(null)` — null = closed, non-null = open with those filters
+
+### 2026-02-24 — Issue #96: Separate dueDate from Tracking Date — CLOSED
+
+**What went well:**
+- Clean 7-file change with zero new dependencies and zero TypeScript errors
+- Plan was precise enough to implement without any deviations
+- Root cause correctly identified: `dueDate` served dual roles (identity + tracking), breaking Tier 2 import matching when dates drifted
+
+**Patterns established:**
+- Immutable identity fields: `dueDate` frozen after creation, rolling data goes to `overdueTrackedAt` — keeps matching keys stable
+- Conditional tracking field: `...(dateChanged ? { overdueTrackedAt: parsedDueDate } : {})` — only write when dates actually differ, avoid redundant data
+- `select: { id: true, dueDate: true }` in match queries when you need to compare stored values before deciding what to update
+- Cleanup script pattern: dry-run by default, `--apply` flag for execution (same as `fix-segurado-dates.ts` and `cleanup-duplicate-payables.ts`)
 
 ### 2026-02-23 — Issue #63: AR Import Service — Persistence, Dedup, Audit — CLOSED
 
