@@ -1,4 +1,4 @@
-import { LayoutDashboard, Truck, Receipt, Repeat, FileSpreadsheet, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Truck, Receipt, Repeat, FileSpreadsheet, CreditCard, type LucideIcon } from "lucide-react";
 
 // Each item in this array becomes a link in the sidebar.
 // To add a new section in the future, just add one object here —
@@ -16,4 +16,5 @@ export const mainNavItems: NavItem[] = [
   { title: "Contas a Pagar", href: "/dashboard/contas-a-pagar", icon: Receipt },
   { title: "Recorrências", href: "/dashboard/recorrencias", icon: Repeat },
   { title: "Importar", href: "/dashboard/importar", icon: FileSpreadsheet },
+  { title: "Recebimentos", href: "/dashboard/recebimentos", icon: CreditCard },
 ];
