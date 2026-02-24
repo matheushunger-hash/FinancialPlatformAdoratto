@@ -63,6 +63,25 @@ export interface CardTransactionListItem {
   totalInstallments: number;
   status: string; // TransactionStatus enum value
   createdAt: string;
+  receipt: ReceiptSummary | null;
+}
+
+export interface ReceiptSummary {
+  id: string;
+  receivedAt: string; // yyyy-MM-dd
+  receivedAmount: string; // Decimal as string
+  divergence: string; // Decimal as string
+  notes: string | null;
+}
+
+export interface TransactionsListResponse {
+  transactions: CardTransactionListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  grossTotal: string; // Decimal as string — sum for current filter
+  netTotal: string; // Decimal as string — sum for current filter
 }
 
 export interface ImportBatchSummary {
@@ -82,6 +101,7 @@ export interface TransactionFilters {
   search?: string;
   status?: string;
   brand?: string;
+  acquirer?: string;
   dateFrom?: string;
   dateTo?: string;
   importBatchId?: string;
