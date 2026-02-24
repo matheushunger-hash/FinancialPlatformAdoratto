@@ -107,6 +107,27 @@ export interface TransactionFilters {
   importBatchId?: string;
 }
 
+// --- AR Dashboard types (#66) ---
+
+export interface ARDashboardKPI {
+  amount: string; // Decimal as string (R$)
+  count: number;
+}
+
+export interface ARFeesKPI {
+  amount: string; // Decimal as string (R$)
+  avgPct: string; // Decimal as string (e.g., "4.09")
+}
+
+export interface ARDashboardSummary {
+  totalPending: ARDashboardKPI; // All PENDING transactions
+  receivableToday: ARDashboardKPI; // expectedPaymentDate = today, PENDING or CONFIRMED
+  next7Days: ARDashboardKPI; // expectedPaymentDate in next 7 days, PENDING
+  feesThisMonth: ARFeesKPI; // feeAmount sum + avg feePct for current calendar month
+  overdueCount: number; // Count where status = OVERDUE
+  weekOverWeekPct: string; // Formatted: "+3.2" or "-1.5" or "0"
+}
+
 // --- Status config (like STATUS_CONFIG for PayableStatus) ---
 
 export const TRANSACTION_STATUS_CONFIG: Record<
