@@ -63,8 +63,15 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
   }
 
   const config = STATUS_CONFIG[data.status];
-  const fillPercent = Math.min(data.utilization * 100, 100);
   const isOver = data.remaining < 0;
+
+  // Split progress bar into pending + overdue segments (#91)
+  const pendingOpen = data.totalOpen - data.overdueOpen;
+  const fillPercent = Math.min((data.totalOpen / data.limit) * 100, 100);
+  const pendingWidth = data.totalOpen > 0
+    ? (pendingOpen / data.totalOpen) * fillPercent : 0;
+  const overdueWidth = data.totalOpen > 0
+    ? (data.overdueOpen / data.totalOpen) * fillPercent : 0;
 
   return (
     <Card className="rounded-xl shadow-sm">
@@ -87,12 +94,26 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
           </Badge>
         </div>
 
-        {/* Progress bar */}
+        {/* Progress bar — split into pending + overdue segments (#91) */}
         <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${config.barColor}`}
-            style={{ width: `${fillPercent}%` }}
-          />
+          <div className="flex h-full">
+            {pendingWidth > 0 && (
+              <div
+                className={`h-full transition-all duration-500 ${config.barColor} rounded-l-full ${
+                  overdueWidth > 0 ? "" : "rounded-r-full"
+                }`}
+                style={{ width: `${pendingWidth}%` }}
+              />
+            )}
+            {overdueWidth > 0 && (
+              <div
+                className={`h-full rounded-r-full transition-all duration-500 bg-red-500 ${
+                  pendingWidth > 0 ? "" : "rounded-l-full"
+                }`}
+                style={{ width: `${overdueWidth}%` }}
+              />
+            )}
+          </div>
         </div>
 
         {/* Status + remaining */}
@@ -104,12 +125,22 @@ export function BuyerBudgetGauge({ data, loading }: BuyerBudgetGaugeProps) {
             {isOver
               ? `Excedido em ${formatBRL(Math.abs(data.remaining))}`
               : `Restam ${formatBRL(data.remaining)}`}
+            {data.overdueOpen > 0 && !isOver && (
+              <span className="text-red-500">
+                {" "}({formatCompactBRL(data.overdueOpen)} vencido)
+              </span>
+            )}
           </span>
         </div>
 
         {/* Count */}
         <p className="text-xs text-muted-foreground">
-          {data.openCount} {data.openCount === 1 ? "título pendente" : "títulos pendentes"}
+          {data.openCount - data.overdueCount} pendente{data.openCount - data.overdueCount !== 1 ? "s" : ""}
+          {data.overdueCount > 0 && (
+            <span className="text-red-500">
+              , {data.overdueCount} vencido{data.overdueCount !== 1 ? "s" : ""}
+            </span>
+          )}
         </p>
       </CardContent>
     </Card>
