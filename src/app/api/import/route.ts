@@ -362,22 +362,60 @@ export async function POST(request: NextRequest) {
       const parsedDueDate = new Date(dueDate + "T12:00:00");
       const parsedIssueDate = new Date(issueDate + "T12:00:00");
 
-      // Update mode: check for existing payable by supplier + amount + dueDate
+      // Update mode: two-tier matching strategy
+      // Tier 1: invoiceNumber (stable across date/amount changes)
+      // Tier 2: supplier + amount + dueDate (fallback when no invoice number)
       if (updateExisting && resolvedSupplierId) {
-        const existing = await prisma.payable.findFirst({
-          where: {
-            tenantId,
-            supplierId: resolvedSupplierId,
-            amount,
-            dueDate: parsedDueDate,
-          },
-          select: { id: true },
-        });
+        let existing: { id: string } | null = null;
+        let matchedByInvoice = false;
+
+        // Tier 1: Match by invoice number (stable across date/amount changes)
+        if (invoiceStr) {
+          existing = await prisma.payable.findFirst({
+            where: {
+              tenantId,
+              supplierId: resolvedSupplierId,
+              invoiceNumber: invoiceStr,
+            },
+            select: { id: true },
+          });
+          if (existing) matchedByInvoice = true;
+        }
+
+        // Tier 2: Fallback to original matching (no invoice number or no Tier 1 match)
+        if (!existing) {
+          existing = await prisma.payable.findFirst({
+            where: {
+              tenantId,
+              supplierId: resolvedSupplierId,
+              amount,
+              dueDate: parsedDueDate,
+            },
+            select: { id: true },
+          });
+        }
 
         if (existing) {
           await prisma.payable.update({
             where: { id: existing.id },
-            data: { status, paidAt, jurosMulta },
+            data: matchedByInvoice
+              ? {
+                  // Confident match — safe to update all financial fields
+                  dueDate: parsedDueDate,
+                  issueDate: parsedIssueDate,
+                  amount,
+                  payValue,
+                  jurosMulta,
+                  status,
+                  paidAt,
+                  description,
+                }
+              : {
+                  // Heuristic match — conservative update only
+                  status,
+                  paidAt,
+                  jurosMulta,
+                },
           });
           updatedCount++;
           continue; // Skip creation — we updated instead
