@@ -29,13 +29,19 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // Fetch the user's profile from Prisma.
   // The Prisma User and Supabase Auth user share the same UUID,
   // so we can look up by authUser.id directly.
-  const profile = await prisma.user.findUnique({
-    where: { id: authUser.id },
-    select: { name: true, role: true },
-  });
+  // Wrapped in try/catch — a DB failure here must NOT crash the whole app.
+  let profile: { name: string; role: string } | null = null;
+  try {
+    profile = await prisma.user.findUnique({
+      where: { id: authUser.id },
+      select: { name: true, role: true },
+    });
+  } catch (err) {
+    console.error("[DashboardLayout] Prisma query failed:", err);
+  }
 
   // If the user exists in Supabase Auth but not in Prisma,
-  // something went wrong with seeding. Redirect to login.
+  // something went wrong with seeding or the DB is down. Redirect to login.
   if (!profile) {
     redirect("/login");
   }
