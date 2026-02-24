@@ -63,6 +63,25 @@ export interface CardTransactionListItem {
   totalInstallments: number;
   status: string; // TransactionStatus enum value
   createdAt: string;
+  receipt: ReceiptSummary | null;
+}
+
+export interface ReceiptSummary {
+  id: string;
+  receivedAt: string; // yyyy-MM-dd
+  receivedAmount: string; // Decimal as string
+  divergence: string; // Decimal as string
+  notes: string | null;
+}
+
+export interface TransactionsListResponse {
+  transactions: CardTransactionListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  grossTotal: string; // Decimal as string — sum for current filter
+  netTotal: string; // Decimal as string — sum for current filter
 }
 
 export interface ImportBatchSummary {
@@ -82,9 +101,31 @@ export interface TransactionFilters {
   search?: string;
   status?: string;
   brand?: string;
+  acquirer?: string;
   dateFrom?: string;
   dateTo?: string;
   importBatchId?: string;
+}
+
+// --- AR Dashboard types (#66) ---
+
+export interface ARDashboardKPI {
+  amount: string; // Decimal as string (R$)
+  count: number;
+}
+
+export interface ARFeesKPI {
+  amount: string; // Decimal as string (R$)
+  avgPct: string; // Decimal as string (e.g., "4.09")
+}
+
+export interface ARDashboardSummary {
+  totalPending: ARDashboardKPI; // All PENDING transactions
+  receivableToday: ARDashboardKPI; // expectedPaymentDate = today, PENDING or CONFIRMED
+  next7Days: ARDashboardKPI; // expectedPaymentDate in next 7 days, PENDING
+  feesThisMonth: ARFeesKPI; // feeAmount sum + avg feePct for current calendar month
+  overdueCount: number; // Count where status = OVERDUE
+  weekOverWeekPct: string; // Formatted: "+3.2" or "-1.5" or "0"
 }
 
 // --- Status config (like STATUS_CONFIG for PayableStatus) ---

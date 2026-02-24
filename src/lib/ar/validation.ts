@@ -29,6 +29,7 @@ export const transactionFilterSchema = z.object({
   search: z.string().optional(),
   status: z.string().optional(),
   brand: z.string().optional(),
+  acquirer: z.string().optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   importBatchId: z.string().optional(),
