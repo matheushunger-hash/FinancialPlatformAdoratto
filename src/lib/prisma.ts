@@ -27,7 +27,11 @@ function createPrismaClient() {
     connectionString: process.env.DIRECT_URL,
     max: process.env.VERCEL ? 3 : 10,
   });
-  pool.on("connect", (client) => client.query("SET timezone = 'UTC'"));
+  pool.on("connect", (client) => {
+    client.query("SET timezone = 'UTC'").catch((err) => {
+      console.error("Failed to SET timezone on new connection:", err);
+    });
+  });
   const adapter = new PrismaPg(pool);
 
   return new PrismaClient({
