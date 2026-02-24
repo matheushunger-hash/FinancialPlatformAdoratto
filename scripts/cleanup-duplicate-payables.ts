@@ -6,12 +6,15 @@ import { PrismaClient } from "@prisma/client";
 // =============================================================================
 // Cleanup Duplicate Payables — One-time script
 // =============================================================================
-// The Feb 23→24 re-import created duplicates because the old matching key
-// (supplier + amount + dueDate) missed rescheduled payments. Now that import
-// dedup uses invoiceNumber as primary key, we need to remove the old dupes.
+// The Feb 23→24 re-import created duplicates in two ways:
 //
-// Detection: group by tenantId + supplierId + invoiceNumber → keep newest
-// (createdAt DESC), delete older records.
+// Phase 1: Payables WITH invoiceNumber — the old matching key (supplier +
+//   amount + dueDate) missed rescheduled payments with different dates/amounts.
+//   → Group by tenantId + supplierId + invoiceNumber, keep NEWEST (has updated data).
+//
+// Phase 2: Payables WITHOUT invoiceNumber (null) — repeated imports created
+//   exact copies with identical supplier + amount + dueDate.
+//   → Group by tenantId + supplierId + amount + dueDate, keep OLDEST (original).
 //
 // Usage:
 //   npm run db:cleanup-dupes           # dry-run (shows what would be deleted)
@@ -22,40 +25,29 @@ const pool = new Pool({ connectionString: process.env.DIRECT_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-async function main() {
-  const applyMode = process.argv.includes("--apply");
+type PayableRow = {
+  id: string;
+  tenantId: string;
+  supplierId: string | null;
+  invoiceNumber: string | null;
+  amount: unknown; // Prisma Decimal
+  payValue: unknown; // Prisma Decimal
+  dueDate: Date;
+  status: string;
+  createdAt: Date;
+  supplier: { name: string } | null;
+};
 
-  console.log("=== Cleanup Duplicate Payables ===");
-  console.log(`Mode: ${applyMode ? "APPLY (will delete)" : "DRY RUN (preview only)"}\n`);
+function formatRow(p: PayableRow): string {
+  const created = p.createdAt.toISOString().split("T")[0];
+  const due = p.dueDate.toISOString().split("T")[0];
+  return `${p.id}  created ${created}  ${p.status}  R$ ${Number(p.payValue).toFixed(2)}  due ${due}`;
+}
 
-  // 1. Fetch all payables with a non-null invoiceNumber (+ supplier name for display)
-  const payables = await prisma.payable.findMany({
-    where: {
-      invoiceNumber: { not: null },
-    },
-    select: {
-      id: true,
-      tenantId: true,
-      supplierId: true,
-      invoiceNumber: true,
-      description: true,
-      amount: true,
-      payValue: true,
-      dueDate: true,
-      status: true,
-      createdAt: true,
-      supplier: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" }, // newest first within each group
-  });
-
-  console.log(`Found ${payables.length} payables with invoiceNumber.\n`);
-
-  // 2. Group by tenantId + supplierId + invoiceNumber
-  const groups = new Map<string, typeof payables>();
-
+function groupBy(payables: PayableRow[], keyFn: (p: PayableRow) => string): Map<string, PayableRow[]> {
+  const groups = new Map<string, PayableRow[]>();
   for (const p of payables) {
-    const key = `${p.tenantId}|${p.supplierId ?? "null"}|${p.invoiceNumber}`;
+    const key = keyFn(p);
     const group = groups.get(key);
     if (group) {
       group.push(p);
@@ -63,35 +55,102 @@ async function main() {
       groups.set(key, [p]);
     }
   }
+  return groups;
+}
 
-  // 3. Find groups with 2+ records (duplicates)
+async function main() {
+  const applyMode = process.argv.includes("--apply");
+
+  console.log("=== Cleanup Duplicate Payables ===");
+  console.log(`Mode: ${applyMode ? "APPLY (will delete)" : "DRY RUN (preview only)"}\n`);
+
   const idsToDelete: string[] = [];
   let dupeGroupCount = 0;
 
-  for (const [, group] of groups) {
-    if (group.length < 2) continue;
+  // ── Phase 1: Payables WITH invoiceNumber ──────────────────────────────────
+  // Key: tenantId + supplierId + invoiceNumber → keep NEWEST (rescheduled data)
 
+  console.log("─── Phase 1: Duplicates by invoiceNumber ───\n");
+
+  const withInvoice = await prisma.payable.findMany({
+    where: { invoiceNumber: { not: null } },
+    select: {
+      id: true, tenantId: true, supplierId: true, invoiceNumber: true,
+      amount: true, payValue: true, dueDate: true, status: true, createdAt: true,
+      supplier: { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" }, // newest first
+  });
+
+  console.log(`  ${withInvoice.length} payables with invoiceNumber.`);
+
+  const invoiceGroups = groupBy(
+    withInvoice as PayableRow[],
+    (p) => `${p.tenantId}|${p.supplierId ?? "null"}|${p.invoiceNumber}`,
+  );
+
+  for (const [, group] of invoiceGroups) {
+    if (group.length < 2) continue;
     dupeGroupCount++;
 
-    // group is already sorted newest-first (createdAt DESC from the query)
-    const [keep, ...remove] = group;
-
-    console.log(`── Duplicate group: invoice "${keep.invoiceNumber}" | ${keep.supplier?.name ?? "Unknown supplier"}`);
-    console.log(`   ${group.length} records found — keeping newest, deleting ${remove.length}`);
-    console.log(`   KEEP   ${keep.id}  created ${keep.createdAt.toISOString().split("T")[0]}  ${keep.status}  R$ ${Number(keep.payValue).toFixed(2)}  due ${keep.dueDate.toISOString().split("T")[0]}`);
-
+    const [keep, ...remove] = group; // newest first
+    console.log(`\n── invoice "${keep.invoiceNumber}" | ${keep.supplier?.name ?? "Unknown"} (${group.length} records)`);
+    console.log(`   KEEP   ${formatRow(keep)}`);
     for (const r of remove) {
-      console.log(`   DELETE ${r.id}  created ${r.createdAt.toISOString().split("T")[0]}  ${r.status}  R$ ${Number(r.payValue).toFixed(2)}  due ${r.dueDate.toISOString().split("T")[0]}`);
+      console.log(`   DELETE ${formatRow(r)}`);
       idsToDelete.push(r.id);
     }
-
-    console.log();
   }
 
-  // 4. Summary
+  const phase1Count = idsToDelete.length;
+  console.log(`\n  Phase 1: ${dupeGroupCount} groups, ${phase1Count} to delete.\n`);
+
+  // ── Phase 2: Payables WITHOUT invoiceNumber ───────────────────────────────
+  // Key: tenantId + supplierId + amount + dueDate → keep OLDEST (original)
+
+  console.log("─── Phase 2: Duplicates by supplier + amount + dueDate (no invoice) ───\n");
+
+  const withoutInvoice = await prisma.payable.findMany({
+    where: { invoiceNumber: null },
+    select: {
+      id: true, tenantId: true, supplierId: true, invoiceNumber: true,
+      amount: true, payValue: true, dueDate: true, status: true, createdAt: true,
+      supplier: { select: { name: true } },
+    },
+    orderBy: { createdAt: "asc" }, // oldest first
+  });
+
+  console.log(`  ${withoutInvoice.length} payables without invoiceNumber.`);
+
+  const nullGroups = groupBy(
+    withoutInvoice as PayableRow[],
+    (p) => `${p.tenantId}|${p.supplierId ?? "null"}|${Number(p.amount).toFixed(2)}|${p.dueDate.toISOString().split("T")[0]}`,
+  );
+
+  let phase2Groups = 0;
+
+  for (const [, group] of nullGroups) {
+    if (group.length < 2) continue;
+    phase2Groups++;
+    dupeGroupCount++;
+
+    const [keep, ...remove] = group; // oldest first
+    console.log(`\n── ${keep.supplier?.name ?? "Unknown"} | R$ ${Number(keep.amount).toFixed(2)} | due ${keep.dueDate.toISOString().split("T")[0]} (${group.length} records)`);
+    console.log(`   KEEP   ${formatRow(keep)}`);
+    for (const r of remove) {
+      console.log(`   DELETE ${formatRow(r)}`);
+      idsToDelete.push(r.id);
+    }
+  }
+
+  const phase2Count = idsToDelete.length - phase1Count;
+  console.log(`\n  Phase 2: ${phase2Groups} groups, ${phase2Count} to delete.\n`);
+
+  // ── Summary & Execute ─────────────────────────────────────────────────────
+
   console.log("─".repeat(60));
-  console.log(`Duplicate groups: ${dupeGroupCount}`);
-  console.log(`Records to delete: ${idsToDelete.length}`);
+  console.log(`Total duplicate groups: ${dupeGroupCount}`);
+  console.log(`Total records to delete: ${idsToDelete.length} (${phase1Count} phase 1 + ${phase2Count} phase 2)`);
 
   if (idsToDelete.length === 0) {
     console.log("\nNo duplicates found. Nothing to do.");
@@ -104,7 +163,6 @@ async function main() {
     return;
   }
 
-  // 5. Delete the older duplicates
   console.log("\nDeleting...");
 
   const result = await prisma.payable.deleteMany({
