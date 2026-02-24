@@ -5,6 +5,42 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-24 — Issue #87: KPI Cards — Clickable Drill-Down — CLOSED
+
+**What was built:**
+Made all 6 KPI cards clickable — each opens the drill-down sheet with appropriate filters pre-applied. Added `tag` field to `DrillDownFilter`, comma-separated multi-status support in the payables API (`status=PENDING,APPROVED`), and subtle hover effects (scale + shadow) on cards.
+
+**What went well:**
+- Clean 5-file implementation, zero deviations from plan, zero TypeScript errors
+- Reused the exact same `DrillDownFilter` + `onDrillDown` pattern already established by charts
+- Comma-separated status support is backward compatible — single values still work
+- `buildFilter` per card is declarative and data-driven — no switch/if chains
+
+**Mistakes caught:**
+- None — plan was specific enough to implement without issues
+
+**Files changed:** `types.ts`, `payables/route.ts`, `drill-down-sheet.tsx`, `kpi-cards.tsx`, `dashboard-view.tsx`
+
+---
+
+### 2026-02-24 — Issue #88: Top 10 Suppliers — Stacked Overdue Segments — CLOSED
+
+**What was built:**
+Split each supplier's horizontal bar into 3 color-coded segments: Pago (teal), Pendente (urgency-tier colored), and Vencido (red). Added summary ribbon above the chart, enhanced tooltip with per-segment breakdown + max aging days, and a custom legend.
+
+**What went well:**
+- Direct analog of weekly calendar pattern — reused `computeUrgencyTier()`, same color palette, same stacked bar approach
+- Three segments give complete visibility into supplier debt composition
+- `_min: { dueDate: true }` trick avoids fetching individual records to compute max aging
+
+**Mistakes caught:**
+1. **Overdue query must be period-scoped**: initial implementation used `dueDate: { lt: today }` without `gte: rangeStart` — grabbed overdue payables from ALL time, making `overdueTotal` bigger than `total` and hiding the paid segment. Fix: `AND: [{ dueDate: { gte: rangeStart, lte: rangeEnd } }, { dueDate: { lt: today } }]`
+2. **Two-segment chart missed PAID**: original plan only had Pendente + Vencido. `pendingAmount = total - overdueTotal` lumped PAID into green — user caught ITAU UNIBANCO showing as Pendente when it was Paid. Fix: added third `paidTotal` segment
+
+**Files changed:** `types.ts`, `dashboard/route.ts`, `dashboard-charts.tsx`
+
+---
+
 ### 2026-02-23 — Issue #79: Clickable Supplier Names — CLOSED
 
 **What was built:**

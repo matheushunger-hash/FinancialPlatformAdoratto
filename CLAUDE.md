@@ -86,6 +86,9 @@ Standard workflow for completing an ADR/feature:
 - `tags: { has: "value" }` for filtering by a value inside a `String[]` array column
 - Two-phase migration for adding required columns: Phase 1 (nullable) → backfill → Phase 2 (required)
 - One-time migration scripts become type-incompatible after Phase 2 — use `as any` and document why
+- Period-scoped overdue queries MUST include `gte: rangeStart` — without it, overdue from all time inflates the segment
+- `AND` array for compound dueDate conditions: `AND: [{ dueDate: { gte: rangeStart, lte: rangeEnd } }, { dueDate: { lt: today } }]` when you need both range and overdue on the same field
+- `_min: { dueDate: true }` in `groupBy` gives oldest dueDate → max days overdue without fetching individual records
 
 ### Date / Timezone (the three rules)
 - **Display/storage dates** → append `T12:00:00` (noon trick, safe in any timezone ±12h)
@@ -184,6 +187,10 @@ Standard workflow for completing an ADR/feature:
 - Bar background tracks: `background={{ fill: "var(--color-muted)", radius: 4 }}` for progress-bar effect
 - Donut center label: `<Label content={({ viewBox }) => <text>}/>` using `viewBox.cx/cy`
 - Use hex colors for SVG fills — CSS variable refs may not resolve in SVG context
+- KPI card drill-down: `CardConfig.buildFilter(from, to) => DrillDownFilter` — each card declaratively maps to its filter
+- Comma-separated multi-status API filter: `status=PENDING,APPROVED` → `split(",")` → validate → `{ in: [...] }`
+- Three-segment supplier bar: overdue `groupBy` (period+lt today) + paid `groupBy` (period+PAID) → `pendingAmount = max(0, total - overdueTotal - paidTotal)`
+- IIFE `(() => { ... })()` inside JSX ternary: local scope for computed data + handlers without a sub-component
 
 ### Storage
 - **Path convention**: `{tenantId}/{payableId}/{timestamp}-{sanitized-filename}`
@@ -216,7 +223,7 @@ Standard workflow for completing an ADR/feature:
 ## Completed ADRs
 ADR-003 (Auth), ADR-004 (Layout), ADR-005 (Supplier CRUD), ADR-006 (Import Suppliers), ADR-007 (Payable Form), ADR-008 (Payables Table), ADR-009 (Filters), ADR-010 (Status Workflow), ADR-011 (Batch Actions), ADR-012 (Edit Payable), ADR-013 (File Attachments), ADR-014 (KPI Cards), ADR-015 (Dashboard Charts), ADR-016 (Date Range Filter), ADR-017 (Supplier Detail Page)
 
-Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #61 (AR Schema Models), Issue #62 (RPInfo Flex XLSX Parser), Issue #63 (AR Import Service), Issue #48 (Forward-Looking Date Presets), Issue #53 (Unify Suppliers Table), Issue #61 (AR Schema Models), Issue #87 (KPI Cards Clickable Drill-Down)
+Also completed: Security Fix (Tenant Isolation), Org-Scoped Isolation, Issue #37 (ADMIN Workflow), Issue #34 (Metadata Panel), Issue #40 (Timezone Audit), Period-Filtered KPIs, ADR-019 (CSV Export), Issue #46 (Import Pago? + Update Mode), Issue #39 (Dashboard Visual Overhaul), Issue #47 (Chart Drill-Down), Issue #49 (Drilldown Panel Redesign), Issue #50 (Delete Payable), Issue #54 (Timezone Validation Fix), Issue #78 (Overdue Payments Monitor), Issue #24 Phase 1 (Recurring Payables CRUD), Issue #61 (AR Schema Models), Issue #62 (RPInfo Flex XLSX Parser), Issue #63 (AR Import Service), Issue #48 (Forward-Looking Date Presets), Issue #53 (Unify Suppliers Table), Issue #61 (AR Schema Models), Issue #87 (KPI Cards Clickable Drill-Down), Issue #88 (Top 10 Suppliers Stacked Overdue)
 
 Full session history: `docs/session-log.md`
 
@@ -230,23 +237,6 @@ Full session history: `docs/session-log.md`
 - "Ver todos" link pattern: Sheet footer links to the full page (`/contas-a-pagar?filters...`) with pre-applied URL params via `URLSearchParams`
 - Smart column hiding in drill-down: supplier drilldowns show description as primary text (supplier already in Sheet title), hide secondary text when it matches primary
 - Orchestrator drill-down state: `useState<DrillDownFilter | null>(null)` — null = closed, non-null = open with those filters
-
-### 2026-02-24 — Issue #87: KPI Cards — Clickable Drill-Down — CLOSED
-
-**What went well:**
-- Clean 5-file implementation, zero deviations from plan, zero TypeScript errors
-- Reused the exact same `DrillDownFilter` + `onDrillDown` pattern already established by charts
-- Comma-separated status support in payables API is backward compatible — single values still work
-- `buildFilter` per card is declarative and data-driven — no switch/if chains
-
-**Mistakes caught — avoid next time:**
-1. No new mistakes — plan was specific enough to implement without issues
-
-**Patterns established:**
-- KPI card drill-down recipe: extend `CardConfig` with `buildFilter(from, to) => DrillDownFilter`, add `onDrillDown`/`from`/`to` props, wire in orchestrator
-- Comma-separated multi-status API filter: `status=PENDING,APPROVED` → `split(",")` → validate each → `{ in: [...] }` for Prisma
-- Conditional hover styles: `onDrillDown && "cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]"` — only interactive when callback provided
-- Dynamic date computation in filter builders: `overdue` and `dueSoon` compute today/+7d at click time (not render time)
 
 ### 2026-02-23 — Issue #63: AR Import Service — Persistence, Dedup, Audit — CLOSED
 
