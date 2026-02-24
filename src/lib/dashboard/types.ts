@@ -38,10 +38,11 @@ export interface DailyPaymentData {
   CANCELLED: number;
 }
 
-// One slice in the donut chart — count of payables per status
+// One slice in the donut chart — count + R$ value of payables per status
 export interface StatusDistribution {
   status: string; // "PENDING", "APPROVED", etc.
   count: number;
+  value: number; // Sum of payValue in R$
 }
 
 // One bar in the top-10 horizontal bar chart

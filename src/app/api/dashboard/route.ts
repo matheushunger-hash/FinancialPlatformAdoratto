@@ -180,7 +180,7 @@ export async function GET(request: NextRequest) {
         _sum: { payValue: true },
       }),
 
-      // 7. Status distribution — count of payables per status (donut chart)
+      // 7. Status distribution — count + R$ value per status (donut chart)
       prisma.payable.groupBy({
         by: ["status"],
         where: {
@@ -188,6 +188,7 @@ export async function GET(request: NextRequest) {
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _count: true,
+        _sum: { payValue: true },
       }),
 
       // 8. Top 10 suppliers by payValue (horizontal bar chart)
@@ -357,6 +358,7 @@ export async function GET(request: NextRequest) {
     const statusDistribution = statusRaw.map((row) => ({
       status: row.status,
       count: row._count,
+      value: Number(row._sum.payValue ?? 0),
     }));
 
     // ---- Top 10 suppliers — resolve names from IDs ----

@@ -13,6 +13,7 @@ import {
   Pie,
   Label,
   Cell,
+  Sector,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -142,17 +143,17 @@ function CustomPieTooltip({
   payload,
 }: {
   active?: boolean;
-  payload?: { name: string; value: number; payload: { status: string } }[];
+  payload?: { name: string; value: number; payload: { status: string; value: number } }[];
 }) {
   if (!active || !payload?.length) return null;
 
   const entry = payload[0];
   return (
     <div className={TOOLTIP_CLASS}>
-      <span>{STATUS_LABELS[entry.payload.status] ?? entry.name}: </span>
-      <span className="font-medium">
-        {entry.value} título{entry.value !== 1 ? "s" : ""}
-      </span>
+      <p className="font-medium">
+        {STATUS_LABELS[entry.payload.status] ?? entry.name}: {entry.value} título{entry.value !== 1 ? "s" : ""}
+      </p>
+      <p className="tabular-nums">{formatBRL(entry.payload.value)}</p>
     </div>
   );
 }
@@ -207,6 +208,28 @@ function CustomAgingTooltip({
         {bracket.count} título{bracket.count !== 1 ? "s" : ""}
       </p>
     </div>
+  );
+}
+
+// -- Exploded pie slice — offsets the OVERDUE sector outward --
+
+const RADIAN = Math.PI / 180;
+const OVERDUE_OFFSET = 6; // pixels to "explode" the overdue slice
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ExplodedSector(props: any) {
+  const { cx, cy, midAngle, payload, ...rest } = props;
+  const isOverdue = payload?.status === "OVERDUE";
+  const offset = isOverdue ? OVERDUE_OFFSET : 0;
+  const offsetX = offset * Math.cos(-midAngle * RADIAN);
+  const offsetY = offset * Math.sin(-midAngle * RADIAN);
+  return (
+    <Sector
+      {...rest}
+      cx={(cx ?? 0) + offsetX}
+      cy={(cy ?? 0) + offsetY}
+      midAngle={midAngle}
+    />
   );
 }
 
@@ -282,9 +305,13 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
   // Axis tick style — uses currentColor so it adapts to light/dark mode
   const tickStyle = { fill: "currentColor", fontSize: 12 };
 
-  // Total count for donut center label
+  // Totals for donut center label (count + R$ value)
   const donutTotal = charts.statusDistribution.reduce(
     (sum, s) => sum + s.count,
+    0,
+  );
+  const donutTotalValue = charts.statusDistribution.reduce(
+    (sum, s) => sum + s.value,
     0,
   );
 
@@ -381,11 +408,33 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                     innerRadius={60}
                     outerRadius={100}
                     paddingAngle={2}
+                    shape={<ExplodedSector />}
+                    style={onDrillDown ? { cursor: "pointer" } : undefined}
                   >
                     {charts.statusDistribution.map((entry) => (
                       <Cell
                         key={entry.status}
                         fill={STATUS_COLORS[entry.status] ?? "#9ca3af"}
+                        onClick={() => {
+                          if (!onDrillDown || !from || !to) return;
+                          const label = STATUS_LABELS[entry.status] ?? entry.status;
+                          // OVERDUE uses compound filter (status IN PENDING/APPROVED + past due)
+                          if (entry.status === "OVERDUE") {
+                            onDrillDown({
+                              title: label,
+                              overdue: true,
+                              dueDateFrom: "2020-01-01",
+                              dueDateTo: new Date().toISOString().split("T")[0],
+                            });
+                          } else {
+                            onDrillDown({
+                              title: label,
+                              status: entry.status,
+                              dueDateFrom: from,
+                              dueDateTo: to,
+                            });
+                          }
+                        }}
                       />
                     ))}
                     <Label
@@ -404,17 +453,24 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                             >
                               <tspan
                                 x={viewBox.cx}
-                                dy="-0.5em"
+                                dy="-0.8em"
                                 className="fill-foreground text-2xl font-bold"
                               >
                                 {donutTotal}
                               </tspan>
                               <tspan
                                 x={viewBox.cx}
-                                dy="1.5em"
+                                dy="1.3em"
                                 className="fill-muted-foreground text-xs"
                               >
                                 títulos
+                              </tspan>
+                              <tspan
+                                x={viewBox.cx}
+                                dy="1.3em"
+                                className="fill-muted-foreground text-xs"
+                              >
+                                {formatCompactBRL(donutTotalValue)}
                               </tspan>
                             </text>
                           );
@@ -424,9 +480,11 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                   </Pie>
                   <Tooltip content={<CustomPieTooltip />} />
                   <Legend
-                    formatter={(value: string) =>
-                      STATUS_LABELS[value] ?? value
-                    }
+                    formatter={(value: string) => {
+                      const item = charts.statusDistribution.find(s => s.status === value);
+                      const label = STATUS_LABELS[value] ?? value;
+                      return item ? `${label} — ${formatCompactBRL(item.value)}` : label;
+                    }}
                   />
                 </PieChart>
               </ResponsiveContainer>
