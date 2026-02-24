@@ -5,6 +5,32 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-24 — Issue #91: Buyer Budget Gauge — Overdue Awareness — CLOSED
+
+**What was built:**
+- Split the budget gauge progress bar into two segments: pending (green/yellow) + overdue (red)
+- Replaced single PENDING-only budget query with two non-overlapping queries using `status IN (PENDING, APPROVED)` — one for non-overdue (dueDate >= today) and one for overdue (dueDate < today)
+- Status logic change: overdue > 0 forces minimum "yellow" tier — buyers never see "green" while sitting on overdue debt
+- Summary text shows "(R$ 20k vencido)" parenthetical when overdue exists (hidden when over budget — redundant)
+- Count text split into "X pendentes, Y vencidos" with red coloring on overdue portion
+
+**Files changed:** 3 files, +71/-19 lines
+- `src/lib/dashboard/types.ts` — added `overdueOpen`, `overdueCount` to `BuyerBudgetData`
+- `src/app/api/dashboard/route.ts` — two non-overlapping queries (16a pending, 16b overdue), `rawStatus` + overdue bump logic
+- `src/components/dashboard/buyer-budget-gauge.tsx` — split bar with proportional widths, conditional border radius, overdue text
+
+**Mistakes caught:**
+1. No new mistakes — plan was specific enough to implement without issues
+
+**Patterns established:**
+- Non-overlapping query split: `dueDate >= today` vs `dueDate < today` within the same week range — avoids double-counting when extracting overdue from a broader "active" bucket
+- Proportional segment widths: `(segment / total) * fillPercent` — scales correctly both under and over budget
+- Conditional border radius for segmented bars: first segment `rounded-l-full`, last segment `rounded-r-full`, single segment gets both
+- Status floor pattern: compute `rawStatus` from thresholds first, then conditionally bump: `rawStatus === "green" && condition ? "yellow" : rawStatus`
+- Overdue text suppression: hide overdue callout when `isOver` — the "Excedido" message already conveys urgency
+
+---
+
 ### 2026-02-24 — Issue #89: Daily Payments Chart — Summary Ribbon + Today Marker — CLOSED
 
 **What was built:**
