@@ -322,15 +322,25 @@ export async function POST(request: NextRequest) {
       // Compute juros/multa (interest/penalty)
       const jurosMulta = payValue > amount ? payValue - amount : 0;
 
-      // Detect overdue payables from "Excluídas" + "Mês Ref." columns (#96)
-      // When "Excluídas" = "segurado" and "Mês Ref." has a date:
-      //   - "Mês Ref." is the REAL original due date
-      //   - "Vencimento" is the rolling/tracking date (rolled forward daily)
-      const rawExcludedTag = getField(row, "excludedTag");
-      const isSegurado = /^segurado$/i.test(String(rawExcludedTag || "").trim());
+      // Detect overdue payables from "Excluídas" column (#96)
+      // The cell may contain various formats:
+      //   "segurado"          — clean (separate Mês Ref column has the date)
+      //   "-segurado 10/02"   — date embedded in same cell
+      //   "- segurado 20/01"  — with spaces
+      //   "-segurado13/02"    — no space before date
+      //   "-segurado 10/02 vai para cartorio" — extra text after date
+      const rawExcludedTag = String(getField(row, "excludedTag") || "").trim();
+      const isSegurado = /segurado/i.test(rawExcludedTag);
 
+      // Try to extract embedded date from the Excluídas cell (e.g., "-segurado 10/02")
+      const embeddedDateMatch = rawExcludedTag.match(/(\d{1,2})\/(\d{1,2})/);
+      const embeddedDate = embeddedDateMatch
+        ? parseImportDate(`${embeddedDateMatch[1]}/${embeddedDateMatch[2]}`)
+        : null;
+
+      // Mês Ref column (separate) takes priority, embedded date is fallback
       const rawRefDate = getField(row, "refDate");
-      const refDate = parseImportDate(rawRefDate);
+      const refDate = parseImportDate(rawRefDate) ?? embeddedDate;
 
       // Auto-add "segurado" tag when detected from "Excluídas" column
       if (isSegurado && !tags.includes("segurado")) {
