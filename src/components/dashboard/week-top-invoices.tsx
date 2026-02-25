@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,7 +20,17 @@ function formatDateBR(iso: string): string {
 }
 
 // Active statuses that appear in the weekly chart (PENDING/APPROVED with dueDate check)
-const ACTIVE_STATUSES = "PENDING,APPROVED";
+const ACTIVE_STATUSES = "PENDING,APPROVED,PAID";
+
+// Sortable column keys (NF is intentionally excluded)
+type SortField = "supplierName" | "payValue" | "dueDate" | "status";
+type SortOrder = "asc" | "desc";
+
+// Default sort: highest value first
+const DEFAULT_SORT: { field: SortField; order: SortOrder } = {
+  field: "payValue",
+  order: "desc",
+};
 
 interface WeekTopInvoicesProps {
   weekStart: string; // "2026-02-21" ISO date
@@ -36,9 +47,11 @@ export function WeekTopInvoices({
 }: WeekTopInvoicesProps) {
   const [invoices, setInvoices] = useState<PayableListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sort, setSort] = useState<{ field: SortField; order: SortOrder }>(DEFAULT_SORT);
 
   useEffect(() => {
     setLoading(true);
+    setSort(DEFAULT_SORT); // Reset sort when week changes
     const params = new URLSearchParams({
       dueDateFrom: weekStart,
       dueDateTo: weekEnd,
@@ -67,6 +80,63 @@ export function WeekTopInvoices({
   // Determine if a payable is overdue (active status + dueDate < today)
   function isOverdue(p: PayableListItem): boolean {
     return (p.daysOverdue ?? 0) > 0;
+  }
+
+  // Display status rank: groups Vencido, Pendente, Pago as distinct categories
+  // Lower rank = more urgent (Vencido first when desc)
+  function statusRank(p: PayableListItem): number {
+    if (p.status === "PAID") return 2;           // Pago
+    if ((p.daysOverdue ?? 0) > 0) return 0;      // Vencido
+    return 1;                                      // Pendente
+  }
+
+  // Client-side sort (only 10 items, no need to re-fetch)
+  const sorted = useMemo(() => {
+    const arr = [...invoices];
+    const dir = sort.order === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sort.field) {
+        case "supplierName": {
+          const nameA = (a.supplierName ?? a.payee ?? "").toLowerCase();
+          const nameB = (b.supplierName ?? b.payee ?? "").toLowerCase();
+          return nameA.localeCompare(nameB) * dir;
+        }
+        case "payValue":
+          return (Number(a.payValue) - Number(b.payValue)) * dir;
+        case "dueDate":
+          return a.dueDate.localeCompare(b.dueDate) * dir;
+        case "status": {
+          const ra = statusRank(a);
+          const rb = statusRank(b);
+          return (ra - rb) * dir;
+        }
+        default:
+          return 0;
+      }
+    });
+    return arr;
+  }, [invoices, sort]);
+
+  // Toggle sort: same field flips direction, new field starts desc (value/status) or asc (name/date)
+  function handleSort(field: SortField) {
+    setSort((prev) => {
+      if (prev.field === field) {
+        return { field, order: prev.order === "asc" ? "desc" : "asc" };
+      }
+      const defaultOrder: SortOrder =
+        field === "payValue" || field === "status" ? "desc" : "asc";
+      return { field, order: defaultOrder };
+    });
+  }
+
+  // Sort indicator icon for column header
+  function SortIcon({ field }: { field: SortField }) {
+    if (sort.field !== field) {
+      return <ArrowUpDown className="ml-1 inline h-3 w-3 opacity-40" />;
+    }
+    return sort.order === "asc"
+      ? <ArrowUp className="ml-1 inline h-3 w-3" />
+      : <ArrowDown className="ml-1 inline h-3 w-3" />;
   }
 
   if (loading) {
@@ -113,14 +183,38 @@ export function WeekTopInvoices({
               <tr className="border-b text-xs text-muted-foreground">
                 <th className="pb-2 text-left font-medium">#</th>
                 <th className="pb-2 text-left font-medium">NF</th>
-                <th className="pb-2 text-left font-medium">Fornecedor</th>
-                <th className="pb-2 text-right font-medium">Valor (R$)</th>
-                <th className="pb-2 text-right font-medium">Vencimento</th>
-                <th className="pb-2 text-right font-medium">Status</th>
+                <th
+                  className="cursor-pointer select-none pb-2 text-left font-medium hover:text-foreground"
+                  onClick={() => handleSort("supplierName")}
+                >
+                  Fornecedor
+                  <SortIcon field="supplierName" />
+                </th>
+                <th
+                  className="cursor-pointer select-none pb-2 text-right font-medium hover:text-foreground"
+                  onClick={() => handleSort("payValue")}
+                >
+                  Valor (R$)
+                  <SortIcon field="payValue" />
+                </th>
+                <th
+                  className="cursor-pointer select-none pb-2 text-right font-medium hover:text-foreground"
+                  onClick={() => handleSort("dueDate")}
+                >
+                  Vencimento
+                  <SortIcon field="dueDate" />
+                </th>
+                <th
+                  className="cursor-pointer select-none pb-2 text-right font-medium hover:text-foreground"
+                  onClick={() => handleSort("status")}
+                >
+                  Status
+                  <SortIcon field="status" />
+                </th>
               </tr>
             </thead>
             <tbody>
-              {invoices.map((p, i) => {
+              {sorted.map((p, i) => {
                 const overdue = isOverdue(p);
                 return (
                   <tr
@@ -147,6 +241,13 @@ export function WeekTopInvoices({
                           className="inline-flex w-[62px] justify-center text-[10px] px-1.5 py-0"
                         >
                           Vencido
+                        </Badge>
+                      ) : p.status === "PAID" ? (
+                        <Badge
+                          variant="default"
+                          className="inline-flex w-[62px] justify-center bg-emerald-500/15 text-[10px] text-emerald-700 px-1.5 py-0 hover:bg-emerald-500/15 dark:text-emerald-400"
+                        >
+                          Pago
                         </Badge>
                       ) : (
                         <Badge

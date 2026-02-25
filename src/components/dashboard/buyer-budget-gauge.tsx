@@ -72,17 +72,17 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
   const config = STATUS_CONFIG[data.status];
   const isOver = data.remaining < 0;
 
-  // Bar segments: pending as main metric, overdue as informational extra
-  // data.totalOpen is pending-only after API refactor (overdue excluded from gauge)
-  const pendingValue = data.totalOpen;
+  // Bar segments: paid + pending + overdue = total budget consumption
+  const paidValue = data.paidInWeek ?? 0;
+  const paidCount = data.paidInWeekCount ?? 0;
+  const pendingValue = data.totalOpen - (data.overdueOpen ?? 0) - paidValue;
   const pendingCount = data.openCount;
 
-  // Pending as % of limit (main metric)
-  const pendingPercent = Math.min((pendingValue / data.limit) * 100, 100);
-
-  // Overdue as additional % of limit (informational, not counted toward gauge)
+  // Each segment as % of limit — cap total at 100%
+  const paidPercent = Math.min((paidValue / data.limit) * 100, 100);
+  const pendingPercent = Math.min((pendingValue / data.limit) * 100, 100 - paidPercent);
   const overduePercent = data.overdueOpen > 0
-    ? Math.min((data.overdueOpen / data.limit) * 100, 100 - pendingPercent)
+    ? Math.min((data.overdueOpen / data.limit) * 100, 100 - paidPercent - pendingPercent)
     : 0;
 
   return (
@@ -106,14 +106,23 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
           </Badge>
         </div>
 
-        {/* Progress bar — two distinct color-coded segments */}
+        {/* Progress bar — three distinct color-coded segments: paid + pending + overdue */}
         <div className="h-3 w-full overflow-hidden rounded-full bg-muted">
           <div className="flex h-full">
+            {paidPercent > 0 && (
+              <div
+                className={`h-full transition-all duration-500 bg-emerald-500 rounded-l-full ${
+                  pendingPercent > 0 || overduePercent > 0 ? "" : "rounded-r-full"
+                }`}
+                style={{ width: `${paidPercent}%` }}
+                title={`Pagos: ${formatBRL(paidValue)} (${paidCount})`}
+              />
+            )}
             {pendingPercent > 0 && (
               <div
-                className={`h-full transition-all duration-500 bg-amber-500 rounded-l-full ${
-                  overduePercent > 0 ? "" : "rounded-r-full"
-                }`}
+                className={`h-full transition-all duration-500 bg-amber-500 ${
+                  paidPercent > 0 ? "" : "rounded-l-full"
+                } ${overduePercent > 0 ? "" : "rounded-r-full"}`}
                 style={{ width: `${pendingPercent}%` }}
                 title={`Pendentes: ${formatBRL(pendingValue)} (${pendingCount})`}
               />
@@ -121,7 +130,7 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
             {overduePercent > 0 && (
               <div
                 className={`h-full rounded-r-full transition-all duration-500 bg-red-500 ${
-                  pendingPercent > 0 ? "" : "rounded-l-full"
+                  paidPercent > 0 || pendingPercent > 0 ? "" : "rounded-l-full"
                 }`}
                 style={{ width: `${overduePercent}%` }}
                 title={`Vencidos: ${formatBRL(data.overdueOpen)} (${data.overdueCount})`}
@@ -132,6 +141,18 @@ export function BuyerBudgetGauge({ data, weeklyTopSuppliers, loading }: BuyerBud
 
         {/* Segment legend — colored dots with values */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          {paidCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
+              <span className="text-muted-foreground">
+                Pagos:{" "}
+                <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {formatCompactBRL(paidValue)}
+                </span>
+                <span className="ml-1 text-muted-foreground">({paidCount})</span>
+              </span>
+            </span>
+          )}
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-500" />
             <span className="text-muted-foreground">

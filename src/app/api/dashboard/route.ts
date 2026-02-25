@@ -236,7 +236,9 @@ export async function GET(request: NextRequest) {
       insuredSparklineRaw,
       budgetPendingRaw,
       budgetOverdueRaw,
+      budgetPaidRaw,
       weeklyCalendarRaw,
+      weeklyPaidRaw,
       tenantSettings,
       weeklyTopSuppliersRaw,
       weeklyGrandTotalRaw,
@@ -317,7 +319,18 @@ export async function GET(request: NextRequest) {
         _count: true,
       }),
 
-      // 17. Active payables grouped by dueDate — for weekly calendar (#84)
+      // 16c. Paid payables due this week — already consumed budget
+      prisma.payable.aggregate({
+        where: {
+          ...tenantScope,
+          status: "PAID",
+          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
+      // 17a. Active payables grouped by dueDate — for weekly calendar (#84)
       // Includes both PENDING and APPROVED so we can classify overdue vs pending
       prisma.payable.groupBy({
         by: ["dueDate"],
@@ -330,19 +343,31 @@ export async function GET(request: NextRequest) {
         _count: true,
       }),
 
+      // 17b. Paid payables grouped by dueDate — for weekly calendar paid segment
+      prisma.payable.groupBy({
+        by: ["dueDate"],
+        where: {
+          ...tenantScope,
+          status: "PAID",
+          dueDate: { gte: currentWeekStart, lte: lastWeekEnd },
+        },
+        _sum: { payValue: true },
+        _count: true,
+      }),
+
       // 18. Tenant spending limit (#84)
       prisma.tenantSettings.findUnique({
         where: { tenantId: ctx.tenantId },
         select: { buyerSpendingLimit: true },
       }),
 
-      // 19. Top 10 suppliers by payValue in current week — pending-only, gte today
+      // 19. Top 10 suppliers by payValue in current week — all statuses that consume budget
       prisma.payable.groupBy({
         by: ["supplierId"],
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
-          dueDate: { gte: today, lte: currentWeekEnd },
+          status: { in: ["PENDING", "APPROVED", "PAID"] },
+          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
         _count: true,
@@ -350,12 +375,12 @@ export async function GET(request: NextRequest) {
         take: 10,
       }),
 
-      // 20. Grand total payValue in current week — pending-only, gte today (#94)
+      // 20. Grand total payValue in current week — all budget-consuming statuses
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
-          dueDate: { gte: today, lte: currentWeekEnd },
+          status: { in: ["PENDING", "APPROVED", "PAID"] },
+          dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
       }),
@@ -552,11 +577,12 @@ export async function GET(request: NextRequest) {
         ? Math.round(totalAgingDays / overduePayables.length)
         : 0;
 
-    // ---- Buyer budget gauge (#84, #91, refactor: exclude overdue) ----
+    // ---- Buyer budget gauge (#84, #91, refactor: include paid in total) ----
     const pendingOpen = Number(budgetPendingRaw._sum.payValue ?? 0);
     const overdueOpen = Number(budgetOverdueRaw._sum.payValue ?? 0);
-    // totalOpen = pending-only (overdue excluded from gauge metric, still shown in legend)
-    const totalOpen = pendingOpen;
+    const paidInWeek = Number(budgetPaidRaw._sum.payValue ?? 0);
+    // totalOpen = pending + overdue + paid (full budget consumption this week)
+    const totalOpen = pendingOpen + overdueOpen + paidInWeek;
     const limit = Number(tenantSettings?.buyerSpendingLimit ?? 350000);
     const utilization = limit > 0 ? totalOpen / limit : 0;
 
@@ -579,6 +605,8 @@ export async function GET(request: NextRequest) {
       openCount: budgetPendingRaw._count,
       overdueOpen,
       overdueCount: budgetOverdueRaw._count,
+      paidInWeek,
+      paidInWeekCount: budgetPaidRaw._count,
       weekLabel,
       weekStart: cwsStr,
       weekEnd: cweStr,
@@ -602,12 +630,15 @@ export async function GET(request: NextRequest) {
         isCurrent: i === 0,
         overdueValue: 0,
         overdueCount: 0,
+        paidValue: 0,
+        paidCount: 0,
         totalValue: 0,
         totalCount: 0,
         urgencyTier: "green",
         maxDaysOverdue: 0,
       });
     }
+    // Bucket active (PENDING/APPROVED) payables into weeks
     for (const row of weeklyCalendarRaw) {
       const dateMs = row.dueDate.getTime();
       const bucket = weeklyCalendar.find(
@@ -629,10 +660,23 @@ export async function GET(request: NextRequest) {
         }
       }
     }
+    // Bucket PAID payables into weeks
+    for (const row of weeklyPaidRaw) {
+      const dateMs = row.dueDate.getTime();
+      const bucket = weeklyCalendar.find(
+        (w) =>
+          dateMs >= new Date(w.weekStart + "T00:00:00.000Z").getTime() &&
+          dateMs <= new Date(w.weekEnd + "T23:59:59.999Z").getTime(),
+      );
+      if (bucket) {
+        bucket.paidValue += Number(row._sum.payValue ?? 0);
+        bucket.paidCount += row._count;
+      }
+    }
     // Compute derived fields for each week bucket
     for (const bucket of weeklyCalendar) {
-      bucket.totalValue = bucket.value + bucket.overdueValue;
-      bucket.totalCount = bucket.count + bucket.overdueCount;
+      bucket.totalValue = bucket.value + bucket.overdueValue + bucket.paidValue;
+      bucket.totalCount = bucket.count + bucket.overdueCount + bucket.paidCount;
       bucket.urgencyTier = computeUrgencyTier(bucket);
     }
 

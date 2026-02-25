@@ -773,3 +773,133 @@ Split each supplier's horizontal bar into 3 color-coded segments: Pago (teal), P
 - Donut drill-down: `<Cell onClick>` per slice — same `DrillDownFilter` contract as bar/aging charts
 - Multi-line center label: chain `<tspan dy="1.3em">` elements inside `<text>` for stacked lines (count + label + value)
 - Extending `groupBy` with `_sum`: add `_sum: { payValue: true }` to existing query rather than creating a new one — same DB round-trip, more data
+
+---
+
+<!-- Entries below moved from CLAUDE.md on 2026-02-25 -->
+
+### Drill-Down Panel Patterns (from earlier sessions)
+
+**Patterns established:**
+- Recharts `<Bar>` `onClick` handler receives a `BarRectangleItem`, not the raw data — access original data via `(_data as unknown as { payload: T }).payload`
+- Drill-down pattern: `DrillDownFilter` type (title + optional filters + date range) as the "contract" between chart click handlers and the Sheet component
+- Reuse existing list API for drill-down: `GET /api/payables?supplierId=...&status=...&dueDateFrom=...&dueDateTo=...&pageSize=15` — no new endpoint needed
+- Card-based drill-down list (not HTML `<table>`) — each payable is a `rounded-lg border bg-card p-3` card with two rows (name+amount+badge / description+date)
+- "Load more" pagination: `fetchPayables(pageToFetch, append)` — `append: false` replaces list (skeleton), `append: true` spreads onto existing (button spinner). Separate `loading` vs `loadingMore` states
+- Summary bar: `bg-muted/50` with total R$ value (`tabular-nums`), count with "(X carregados)" suffix, and optional status badge
+- "Ver todos" link pattern: Sheet footer links to the full page (`/contas-a-pagar?filters...`) with pre-applied URL params via `URLSearchParams`
+- Smart column hiding in drill-down: supplier drilldowns show description as primary text (supplier already in Sheet title), hide secondary text when it matches primary
+- Orchestrator drill-down state: `useState<DrillDownFilter | null>(null)` — null = closed, non-null = open with those filters
+
+### 2026-02-24 — Issue #96: Separate dueDate from Tracking Date — CLOSED
+
+**What went well:**
+- Clean 7-file change with zero new dependencies and zero TypeScript errors
+- Plan was precise enough to implement without any deviations
+- Root cause correctly identified: `dueDate` served dual roles (identity + tracking), breaking Tier 2 import matching when dates drifted
+
+**Patterns established:**
+- Immutable identity fields: `dueDate` frozen after creation, rolling data goes to `overdueTrackedAt` — keeps matching keys stable
+- Conditional tracking field: `...(dateChanged ? { overdueTrackedAt: parsedDueDate } : {})` — only write when dates actually differ, avoid redundant data
+- `select: { id: true, dueDate: true }` in match queries when you need to compare stored values before deciding what to update
+- Cleanup script pattern: dry-run by default, `--apply` flag for execution (same as `fix-segurado-dates.ts` and `cleanup-duplicate-payables.ts`)
+
+### 2026-02-23 — Issue #63: AR Import Service — Persistence, Dedup, Audit — CLOSED
+
+**What went well:**
+- First use of `prisma.$transaction()` and first custom error class (`DuplicateBatchError`) in the codebase
+- Clean 3-phase service: overlap detection → transaction dedup → atomic insert
+- Zero TypeScript errors, zero deviations from plan
+
+**Patterns established:**
+- `prisma.$transaction(async (tx) => { ... })` for atomic multi-table writes
+- Custom error classes: extend `Error`, set `name`, carry structured data (e.g., `existingBatchId`) for typed `instanceof` handling
+- Service function pattern: pure business logic, no HTTP concerns — API route calls service and handles responses
+- Dedup via Set: `findMany({ where: { in: ids } })` → `Set<string>` → `filter(!set.has())` — O(n) lookup
+
+### 2026-02-23 — Issue #62: RPInfo Flex XLSX Parser — CLOSED
+
+**What went well:**
+- 3 new files in `src/lib/ar/` (types, parser, validation) — pure function layer, zero DB dependencies, zero new npm packages
+- Reused `parseImportDate` from AP import — no code duplication
+- Zero TypeScript errors, zero deviations from plan
+
+**Patterns established:**
+- `z.union([z.string(), z.number()])` for XLSX cells — XLSX doesn't guarantee string vs number
+- Column name variants: accept both "Taxa Adm." and "Taxa Adm" in Zod schema, `??` fallback in parser
+- `parseNumber()` handles raw XLSX numbers + Brazilian-formatted strings ("1.234,56" -> 1234.56)
+- Fee fields default to 0 if missing/invalid (some voucher rows lack fees)
+- Row number formula: `HEADER_ROW_INDEX + 2 + dataIndex` for spreadsheet-matching error rows
+
+### 2026-02-22 — Issue #24 Phase 1: Recurring Payable Templates CRUD — CLOSED
+
+**What went well:**
+- Full CRUD for recurring payable templates: schema, API, page, table, form — 11 files, zero new npm dependencies (only added shadcn Switch component)
+- Followed the exact same domain file structure as the payables domain: `src/lib/recurring/`, `src/app/api/recurring/`, `src/components/recurring/`
+- Reused existing patterns: orchestrator, SupplierCombobox, date picker, currency blur, tag toggle badges
+- `active` toggle via Switch component sends PATCH with `active: !current` alongside all other form fields
+
+**Mistakes caught — avoid next time:**
+1. **Stale Prisma client**: after `prisma db push` + `prisma generate`, MUST restart dev server — hot reload doesn't pick up new models
+2. **`z.coerce.number()` breaks `zodResolver` in Zod 4**: causes type inference mismatch with `@hookform/resolvers@5`. Fix: use `z.string()` and parse to number in the API route
+3. **Missing `Switch` component**: shadcn doesn't include Switch by default — needed `npx shadcn add switch`
+
+**Patterns established:**
+- New domain recipe (11-file change): schema -> types -> validation -> API list+create -> API detail+update+delete -> page -> orchestrator -> table -> form/sheet -> navigation
+- String-based numeric form fields: store as string in Zod schema, parse with `parseInt()` in API route
+- Toggle via PATCH: include `active: z.boolean().optional()` in schema, spread in update data
+- Quick filter pills (active/inactive): `Badge` with `variant="default"` (active) vs `variant="outline"`
+
+### 2026-02-22 — Issue #78: Overdue Payments Monitor + Segurado Date Fix — CLOSED
+
+**What went well:**
+- Implemented full overdue monitoring: `daysOverdue` computed field in API, color-coded "Dias Vencidos" table column, compound "Vencidos" filter pill, dashboard aging section
+- Fixed the "Vencidos" filter pill — was using `status: "OVERDUE"` -> changed to `overdue: true` compound filter
+- `daysOverdue` sort maps to `dueDate` with reversed direction
+- Data fix script corrected 662 payable due dates from spreadsheet "segurado DD/MM" annotations
+
+**Mistakes caught — avoid next time:**
+1. `PayableDetail extends PayableListItem` — when adding a field to ListItem, the detail route must also include it
+2. CNPJ format mismatch: spreadsheet has formatted, DB stores digits-only — always strip formatting before matching
+3. Shell escaping: `prisma.$disconnect()` in inline bash `-e` scripts breaks — use script files instead
+
+**Patterns established:**
+- Computed API field recipe (no DB column): compute in response mapping, add to types, add to SORT_MAP with inverted sort direction
+- Compound overdue filter: `status IN (PENDING, APPROVED) AND dueDate < today` — more reliable than a dedicated OVERDUE status
+- Aging brackets: compute in-memory from a single overdue query, serialize `Infinity` as `9999` for JSON
+- `stripDocument()`: always strip CNPJ/CPF formatting before DB lookups
+- Data correction scripts: dry-run by default, `--apply` flag for execution
+
+### 2026-02-22 — Issue #52: Auto-Calculate Juros/Multa — CLOSED
+
+**What went well:**
+- Added `jurosMulta` Decimal column, computed server-side as `max(0, payValue - amount)` on every create/update/import
+- Switched table column from `columnHelper.display()` to `columnHelper.accessor("jurosMulta")` (now sortable)
+- Backfill script processed all 930 existing payables
+
+**Patterns established:**
+- Computed Decimal column recipe: schema column -> compute in all write paths -> include in all read paths -> switch table to `accessor()` -> add to SORT_MAP -> backfill script
+- `display()` vs `accessor()` in TanStack Table: `display()` columns have no underlying data and cannot sort
+- Backfill scripts: use `Math.round(value * 100) / 100` to avoid floating point precision issues with currency
+- Nullable Decimal serialization: `p.jurosMulta?.toString() ?? "0"`
+
+### 2026-02-25 — Dashboard Budget Gauge + Weekly Calendar Enhancements
+
+**What went well:**
+- Budget gauge now includes paid invoices as budget consumption (paid + pending + overdue = total)
+- Weekly calendar chart shows 3 stacked segments (Pago/Vencido/Pendente) with budget heat map coloring
+- ReferenceLine at spending limit for visual reference
+- Sortable Top 10 NFs table with client-side sort (no re-fetch needed for 10 items)
+- Zero TypeScript errors across all changes, 6 files modified
+
+**Mistakes caught — avoid next time:**
+1. **Status sort by `daysOverdue` breaks grouping**: Pagos and Pendentes both have `daysOverdue = 0`, so they mix together. Fix: assign ordinal `statusRank()` (Vencido=0, Pendente=1, Pago=2)
+2. **Weekly top suppliers + grand total queries must include PAID**: When budget includes paid, the queries feeding the Top 10 table must also use `status: { in: ["PENDING", "APPROVED", "PAID"] }`
+
+**Patterns established:**
+- Budget consumption = paid + pending + overdue: all three statuses consume the weekly spending limit
+- `getBudgetHeatColor(totalValue, limit)`: pure function for tier-based bar coloring (green < 60%, amber 60-80%, orange 80-95%, red > 95%)
+- Recharts `ReferenceLine`: dashed line at budget limit — `strokeDasharray="6 4"` + `label={{ position: "right" }}`
+- Client-side sort for small tables: `useMemo` + `useState<{field, order}>` — no re-fetch for 10 items or fewer
+- `statusRank()` pattern: map display statuses to ordinal numbers for clean sort grouping
+- Passing custom props to Recharts Tooltip: `<Tooltip content={<CustomTooltip budgetLimit={n} />} />`

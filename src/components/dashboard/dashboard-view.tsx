@@ -126,6 +126,7 @@ export function DashboardView() {
           <WeeklyCalendar
             data={data?.weeklyCalendar ?? null}
             loading={loading}
+            budgetLimit={data?.buyerBudget?.limit ?? 0}
             onDrillDown={setDrillDown}
             onWeekSelect={setSelectedWeek}
             selectedWeekLabel={selectedWeek?.label}

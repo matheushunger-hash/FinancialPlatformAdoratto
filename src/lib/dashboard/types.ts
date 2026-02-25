@@ -96,14 +96,16 @@ export interface AgingOverview {
 // =============================================================================
 
 export interface BuyerBudgetData {
-  totalOpen: number; // Sum of active payable values due this week (R$)
+  totalOpen: number; // Total budget consumption this week: pending + overdue + paid (R$)
   limit: number; // Configured weekly spending limit (R$)
   utilization: number; // totalOpen / limit (0.0 – 1.0+, can exceed 1.0)
   remaining: number; // limit - totalOpen (negative if over)
   status: "green" | "yellow" | "red";
-  openCount: number; // Number of active payables due this week
+  openCount: number; // Number of pending (non-overdue) payables due this week
   overdueOpen: number; // Total R$ of overdue payables due this week
   overdueCount: number; // Count of overdue payables due this week
+  paidInWeek: number; // Total R$ of PAID payables due this week
+  paidInWeekCount: number; // Count of PAID payables due this week
   weekLabel: string; // "21/02 – 27/02" (display label for current week)
   weekStart: string; // ISO date "2026-02-22" (Saturday)
   weekEnd: string; // ISO date "2026-02-28" (Friday)
@@ -124,8 +126,10 @@ export interface WeeklyPaymentData {
   isCurrent: boolean; // true for the week containing today
   overdueValue: number; // Sum of overdue payValues in this week
   overdueCount: number; // Count of overdue payables in this week
-  totalValue: number; // value + overdueValue (convenience for tooltip/ribbon)
-  totalCount: number; // count + overdueCount
+  paidValue: number; // Sum of PAID payValues in this week
+  paidCount: number; // Count of PAID payables in this week
+  totalValue: number; // value + overdueValue + paidValue (convenience for tooltip/ribbon)
+  totalCount: number; // count + overdueCount + paidCount
   urgencyTier: UrgencyTier; // Color tier based on overdue ratio + max aging
   maxDaysOverdue: number; // Worst aging in this week (0 if no overdue)
 }
