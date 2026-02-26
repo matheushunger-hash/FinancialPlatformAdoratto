@@ -16,5 +16,5 @@ export const mainNavItems: NavItem[] = [
   { title: "Contas a Pagar", href: "/dashboard/contas-a-pagar", icon: Receipt },
   { title: "Recorrências", href: "/dashboard/recorrencias", icon: Repeat },
   { title: "Importar", href: "/dashboard/importar", icon: FileSpreadsheet },
-  { title: "Recebimentos", href: "/dashboard/recebimentos", icon: CreditCard },
+  { title: "Recebimentos", href: "/dashboard/recebimentos/transacoes", icon: CreditCard },
 ];
