@@ -13,7 +13,8 @@ import { z } from "zod";
 // =============================================================================
 
 export function parseCurrency(value: string): number {
-  const trimmed = value.trim();
+  // Strip currency symbol, spaces, and non-breaking spaces first
+  const trimmed = value.replace(/[R$\s\u00A0]/g, "").trim();
 
   // If the string has both dots and commas, assume pt-BR format:
   // dots are thousands separators, comma is the decimal separator
@@ -60,8 +61,9 @@ export const payableFormSchema = z
     dueDate: z.string().min(1, "Data de vencimento é obrigatória"),
     amount: z.string().min(1, "Valor original é obrigatório"),
     payValue: z.string().min(1, "Valor a pagar é obrigatório"),
+    scheduledDate: z.string().optional().or(z.literal("")),
     paymentMethod: z.enum(
-      ["BOLETO", "PIX", "TRANSFERENCIA", "CARTAO", "DINHEIRO", "CHEQUE"],
+      ["BOLETO", "PIX", "TRANSFERENCIA", "CARTAO", "DINHEIRO", "CHEQUE", "TAX_SLIP", "PAYROLL"],
       { error: "Método de pagamento é obrigatório" },
     ),
     invoiceNumber: z.string().max(50).optional().or(z.literal("")),

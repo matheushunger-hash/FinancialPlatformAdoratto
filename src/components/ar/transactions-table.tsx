@@ -11,6 +11,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  CheckCircle,
   MoreHorizontal,
   Eye,
 } from "lucide-react";
@@ -51,6 +52,7 @@ interface TransactionsTableProps {
   sort: string;
   order: "asc" | "desc";
   onSortChange: (columnId: string) => void;
+  onRequestReceipt: (id: string) => void;
 }
 
 // --- Helper: Format currency in BRL ---
@@ -70,7 +72,7 @@ function formatPct(value: string): string {
 // --- Column Definitions ---
 const columnHelper = createColumnHelper<CardTransactionListItem>();
 
-function buildColumns() {
+function buildColumns(onRequestReceipt: (id: string) => void) {
   return [
     // 1. Data Pagamento (sortable, color-coded)
     columnHelper.accessor("expectedPaymentDate", {
@@ -175,26 +177,37 @@ function buildColumns() {
       enableSorting: true,
     }),
 
-    // 9. Ações (placeholder — future issues add confirm/diverge)
+    // 9. Ações — receipt registration + future detail view
     columnHelper.display({
       id: "actions",
       header: () => <span className="sr-only">Ações</span>,
-      cell: () => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-8 w-8">
-              <MoreHorizontal className="h-4 w-4" />
-              <span className="sr-only">Abrir menu</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem disabled>
-              <Eye className="mr-2 h-4 w-4" />
-              Ver detalhes
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
+      cell: (info) => {
+        const tx = info.row.original;
+        const canReceive = tx.status === "PENDING" || tx.status === "OVERDUE";
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" className="h-8 w-8">
+                <MoreHorizontal className="h-4 w-4" />
+                <span className="sr-only">Abrir menu</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={!canReceive}
+                onClick={() => onRequestReceipt(tx.id)}
+              >
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Registrar Recebimento
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>
+                <Eye className="mr-2 h-4 w-4" />
+                Ver detalhes
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
     }),
   ];
 }
@@ -215,8 +228,9 @@ export function TransactionsTable({
   sort,
   order,
   onSortChange,
+  onRequestReceipt,
 }: TransactionsTableProps) {
-  const columns = buildColumns();
+  const columns = buildColumns(onRequestReceipt);
 
   // Convert sort/order props into TanStack's SortingState format
   const sorting: SortingState = [{ id: sort, desc: order === "desc" }];

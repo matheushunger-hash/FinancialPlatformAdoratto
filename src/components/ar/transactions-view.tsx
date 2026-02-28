@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { TransactionsTable } from "@/components/ar/transactions-table";
 import { TransactionsFilters } from "@/components/ar/transactions-filters";
 import { TransactionsPagination } from "@/components/ar/transactions-pagination";
+import { ReceiptRegistrationDialog } from "@/components/ar/receipt-registration-dialog";
 import type {
   CardTransactionListItem,
   TransactionsListResponse,
@@ -49,6 +50,9 @@ export function TransactionsView({ userRole: _userRole }: TransactionsViewProps)
   // Summary totals from the API response
   const [grossTotal, setGrossTotal] = useState("0");
   const [netTotal, setNetTotal] = useState("0");
+
+  // Receipt registration dialog state (#71)
+  const [registeringTxId, setRegisteringTxId] = useState<string | null>(null);
 
   // Debounce search input by 300ms
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,6 +127,44 @@ export function TransactionsView({ userRole: _userRole }: TransactionsViewProps)
     setPage(1);
   }
 
+  // Receipt registration handler — POST to API, refresh on success
+  async function handleRegisterReceipt(data: {
+    transactionId: string;
+    receivedAt: string;
+    receivedAmount: string;
+    notes: string;
+  }) {
+    try {
+      const res = await fetch("/api/ar/receipts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Erro desconhecido" }));
+        toast.error(err.error || "Erro ao registrar recebimento");
+        return;
+      }
+
+      const result = await res.json();
+      const statusLabel = result.receipt.newStatus === "CONFIRMED" ? "Confirmado" : "Divergente";
+      toast.success("Recebimento registrado", {
+        description: `Status atualizado para ${statusLabel}`,
+      });
+
+      setRegisteringTxId(null);
+      fetchTransactions();
+    } catch {
+      toast.error("Erro ao registrar recebimento");
+    }
+  }
+
+  // Find the transaction being registered for the dialog props
+  const registeringTransaction = registeringTxId
+    ? transactions.find((t) => t.id === registeringTxId) ?? null
+    : null;
+
   return (
     <div className="space-y-4">
       {/* Summary bar: gross/net totals for current filter */}
@@ -169,6 +211,7 @@ export function TransactionsView({ userRole: _userRole }: TransactionsViewProps)
         sort={sort}
         order={order}
         onSortChange={handleSortChange}
+        onRequestReceipt={(id) => setRegisteringTxId(id)}
       />
 
       {/* Pagination */}
@@ -178,6 +221,22 @@ export function TransactionsView({ userRole: _userRole }: TransactionsViewProps)
         total={total}
         currentCount={transactions.length}
         onPageChange={setPage}
+      />
+
+      {/* Receipt registration dialog (#71) */}
+      <ReceiptRegistrationDialog
+        open={registeringTxId !== null}
+        onOpenChange={(open) => { if (!open) setRegisteringTxId(null); }}
+        transaction={
+          registeringTransaction
+            ? {
+                id: registeringTransaction.id,
+                netAmount: registeringTransaction.netAmount,
+                expectedPaymentDate: registeringTransaction.expectedPaymentDate,
+              }
+            : null
+        }
+        onConfirm={handleRegisterReceipt}
       />
     </div>
   );
