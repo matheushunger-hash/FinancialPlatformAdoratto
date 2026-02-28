@@ -1026,3 +1026,27 @@ Split each supplier's horizontal bar into 3 color-coded segments: Pago (teal), P
 - Summary bar (gross/net totals) uses API-returned aggregates — no client-side computation needed
 - `RIGHT_ALIGNED` Set for cleaner column alignment logic (vs inline string checks in payables)
 - `formatPct()` helper alongside `formatBRL()` for fee percentage display
+
+---
+
+### 2026-02-28 — Issue #70: AR Dashboard UI — KPI Cards + Upcoming Receivables
+
+**What was built:**
+- 3 new AR components: `ar-dashboard-view.tsx` (orchestrator), `ar-kpi-cards.tsx` (4 KPI cards + overdue alert), `upcoming-receivables.tsx` (7-day summary table)
+- Extended `ARDashboardSummary` type with `UpcomingDay[]` and `upcoming` field
+- Added 2 new queries to the AR dashboard API: `groupBy expectedPaymentDate` for daily aggregates + `findMany` for brand pairs to compute top brand per day
+- Replaced stub "em construção" page with live Suspense-wrapped dashboard
+- Nav link corrected from `/recebimentos/transacoes` back to `/recebimentos` (dashboard is the landing page)
+
+**What went well:**
+1. Issue was already fully implemented from a previous session — `/ship` just needed to commit, push, and close
+2. Clean separation of #70-specific files from other uncommitted work (many unrelated changes in working tree)
+3. API design with `upcomingScope` shared between two queries avoids duplication
+
+**Also in this session (before #70 shipping):**
+- Fixed AP dashboard query #19 bug: `weeklyTopSuppliersRaw` had contradictory `actionStatus` conditions (`{ in: ["PAID"] }` AND `OR: [{ actionStatus: null }, ...]`), causing the "Limite de Compras" supplier list to be empty. Replaced with `NOT_CANCELLED` filter.
+
+**Patterns established:**
+- AR dashboard follows a simpler variant of the AP pattern: no period selector, no sparklines, no charts — just snapshot KPIs + upcoming table
+- `topBrandForDay()` pattern: groupBy gives aggregates but not "most frequent category" — solve by fetching raw pairs and computing in JS (small dataset, avoids raw SQL)
+- `DeltaBadge` sub-component reused for week-over-week trending indicator
