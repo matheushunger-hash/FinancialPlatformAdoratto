@@ -5,6 +5,33 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-28 — Issue #101 Phase 4: Historical Import Script
+
+**What was built:**
+- CLI script `scripts/import-historical.ts` for bulk historical spreadsheet import
+- Dry-run by default (preview status breakdown, create/update counts), `--execute` to write
+- Reuses `parseImportDate`, `processImportDocument`, `normalizeName` from `src/lib/import/parsing.ts`
+- Same business rules as web import: segurado detection + date swap, supplier dedup cache, update-vs-create, PAID guard, salary/tax patterns
+
+**Files changed:** 2 files (+557/-1), 1 new
+- `scripts/import-historical.ts` — new CLI script
+- `package.json` — added `db:import-historical` npm script
+
+**What went well:**
+- Dry-run test on real spreadsheet: 897 rows, 0 errors, correct status breakdown (218 temporal, 303 HELD, 376 PAID)
+- All 894 supplier lookups matched existing suppliers — no new suppliers needed (data already imported via web wizard)
+- Pre-implementation analysis correctly identified that web import wizard already covered most of the issue, avoiding unnecessary duplication
+
+**Mistakes caught:**
+- None — clean execution from plan to implementation
+
+**Patterns established:**
+- CLI import script pattern: reuse parsing functions from `src/lib/import/parsing.ts`, implement DB logic directly via Prisma, dry-run with `--execute` flag
+- Dry-run supplier handling: return fake `dry-run-*` IDs to accumulate stats without creating real records
+- Script resolves tenant/user via `prisma.user.findFirst({ where: { role: "ADMIN" } })` — same as seed pattern
+
+---
+
 ### 2026-02-28 — Issue #100 Phase 3: API Corrections
 
 **What was built:**
