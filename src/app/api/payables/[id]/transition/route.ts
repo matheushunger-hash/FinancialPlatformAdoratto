@@ -2,33 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
 import { TRANSITIONS } from "@/lib/payables/transitions";
+import { computeDisplayStatus } from "@/lib/payables/status";
+import type { ActionStatus } from "@prisma/client";
 
 // =============================================================================
-// POST /api/payables/[id]/transition — Change a payable's status
+// POST /api/payables/[id]/transition — Change a payable's actionStatus
 // =============================================================================
-// Single endpoint for all status transitions (approve, reject, pay, reopen).
-// Validates the transition against the TRANSITIONS map and checks user role.
-//
-// Request body: { action: string, paidAt?: string, targetStatus?: string }
-// - action: "approve" | "reject" | "pay" | "reopen" | "reverse" | "cancel" | "force-status"
-// - paidAt: required when action is "pay" or when force-status targets "PAID" (yyyy-MM-dd format)
-// - targetStatus: required when action is "force-status" (ADMIN-only override)
+// Uses the new dual-status model. Transitions are keyed by actionStatus
+// (null → "NULL"). The `to` field can be null (clear actionStatus, return to
+// temporal) or an ActionStatus value.
 // =============================================================================
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  // 1. Auth check — getAuthContext() returns userId, tenantId, and role in one call
   const ctx = await getAuthContext();
   if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // 2. Get payable ID from URL params (Next.js 16: params is a Promise)
   const { id } = await params;
 
-  // 3. Parse request body
   let body: { action?: string; paidAt?: string; targetStatus?: string };
   try {
     body = await request.json();
@@ -42,7 +37,6 @@ export async function POST(
     return NextResponse.json({ error: "Campo 'action' é obrigatório" }, { status: 400 });
   }
 
-  // 4. Fetch current payable (scoped to tenant — everyone in org can see it)
   const payable = await prisma.payable.findFirst({
     where: { id, tenantId: ctx.tenantId },
   });
@@ -51,8 +45,8 @@ export async function POST(
     return NextResponse.json({ error: "Título não encontrado" }, { status: 404 });
   }
 
-  // 5. Handle force-status (ADMIN-only override — any status to any status)
-  const VALID_STATUSES = new Set(["PENDING", "APPROVED", "REJECTED", "PAID", "OVERDUE", "CANCELLED"]);
+  // Handle force-status (ADMIN-only override)
+  const VALID_ACTION_STATUSES = new Set(["APPROVED", "HELD", "PAID", "PROTESTED", "CANCELLED"]);
 
   if (action === "force-status") {
     if (ctx.role !== "ADMIN") {
@@ -62,46 +56,59 @@ export async function POST(
       );
     }
 
-    if (!targetStatus || !VALID_STATUSES.has(targetStatus)) {
+    // targetStatus can be an ActionStatus value or "NULL" to clear
+    const newActionStatus: ActionStatus | null =
+      targetStatus === "NULL" ? null : (targetStatus as ActionStatus);
+
+    if (targetStatus !== "NULL" && (!targetStatus || !VALID_ACTION_STATUSES.has(targetStatus))) {
       return NextResponse.json(
         { error: "Status de destino inválido" },
         { status: 400 },
       );
     }
 
-    if (targetStatus === payable.status.toUpperCase()) {
+    // Check if already in that status
+    if (payable.actionStatus === newActionStatus) {
       return NextResponse.json(
         { error: "O título já está neste status" },
         { status: 400 },
       );
     }
 
-    if (targetStatus === "PAID" && !paidAt) {
+    if (newActionStatus === "PAID" && !paidAt) {
       return NextResponse.json(
         { error: "Data de pagamento é obrigatória para status Pago" },
         { status: 400 },
       );
     }
 
-    // Build update data with smart field cleanup
-    const updateData: Record<string, unknown> = { status: targetStatus };
+    // Build update data
+    const updateData: Record<string, unknown> = {
+      actionStatus: newActionStatus,
+    };
 
-    if (targetStatus === "PAID") {
+    if (newActionStatus === "PAID") {
       updateData.paidAt = new Date(paidAt + "T12:00:00");
-      // Keep existing approval if present, otherwise set current admin
+      updateData.markedPaidAt = new Date();
       if (!payable.approvedBy) {
         updateData.approvedBy = ctx.userId;
         updateData.approvedAt = new Date();
       }
-    } else if (targetStatus === "APPROVED") {
+    } else if (newActionStatus === "APPROVED") {
       updateData.approvedBy = ctx.userId;
       updateData.approvedAt = new Date();
       updateData.paidAt = null;
-    } else {
-      // PENDING, REJECTED, OVERDUE, CANCELLED — clear all downstream fields
+      updateData.markedPaidAt = null;
+    } else if (newActionStatus === null) {
+      // Clearing to temporal — reset downstream fields
       updateData.paidAt = null;
+      updateData.markedPaidAt = null;
       updateData.approvedBy = null;
       updateData.approvedAt = null;
+    } else {
+      // HELD, PROTESTED, CANCELLED — clear payment fields
+      updateData.paidAt = null;
+      updateData.markedPaidAt = null;
     }
 
     try {
@@ -111,9 +118,12 @@ export async function POST(
         include: { supplier: { select: { name: true } } },
       });
 
+      const ds = computeDisplayStatus(updated.actionStatus, updated.dueDate);
+
       return NextResponse.json({
         id: updated.id,
-        status: updated.status,
+        actionStatus: updated.actionStatus,
+        displayStatus: ds,
         supplierName: updated.supplier?.name ?? updated.payee ?? null,
         description: updated.description,
       });
@@ -125,21 +135,26 @@ export async function POST(
     }
   }
 
-  // 6. Look up transition: is this action valid for the current status?
-  // Normalize to uppercase — the pg driver adapter may return enum values
-  // in database casing (e.g. "Paid") instead of Prisma schema casing ("PAID")
-  const status = payable.status.toUpperCase();
-  const transitions = TRANSITIONS[status] ?? [];
-  const transition = transitions.find((t) => t.action === action);
+  // Normal transition — look up in TRANSITIONS map
+  const key = payable.actionStatus ?? "NULL";
+  const ds = computeDisplayStatus(payable.actionStatus, payable.dueDate);
+  const transitions = TRANSITIONS[key] ?? [];
+  const transition = transitions.find((t) => {
+    if (t.action !== action) return false;
+    // Check display status requirement
+    if (t.requiresDisplayStatus) {
+      return t.requiresDisplayStatus.includes(ds);
+    }
+    return true;
+  });
 
   if (!transition) {
     return NextResponse.json(
-      { error: `Ação '${action}' não é válida para o status '${payable.status}'` },
+      { error: `Ação '${action}' não é válida para o status atual` },
       { status: 400 },
     );
   }
 
-  // 7. Validate role: does the user have permission for this action?
   if (!transition.requiredRoles.includes(ctx.role)) {
     return NextResponse.json(
       { error: "Você não tem permissão para esta ação" },
@@ -147,9 +162,9 @@ export async function POST(
     );
   }
 
-  // 8. Build update data based on the action
+  // Build update data
   const updateData: Record<string, unknown> = {
-    status: transition.to,
+    actionStatus: transition.to as ActionStatus | null,
   };
 
   if (action === "approve") {
@@ -164,24 +179,23 @@ export async function POST(
         { status: 400 },
       );
     }
-    // T12:00:00 trick — avoids timezone shift (ADR-008 lesson)
     updateData.paidAt = new Date(paidAt + "T12:00:00");
+    updateData.markedPaidAt = new Date();
   }
 
-  if (action === "reopen" || action === "unapprove") {
-    // Clear approval tracking when reopening or unapproving
+  if (action === "unapprove" || action === "release" || action === "reopen") {
+    // Clear approval tracking when returning to temporal
     updateData.approvedBy = null;
     updateData.approvedAt = null;
   }
 
   if (action === "reverse") {
-    // Full reset: clear payment AND approval fields (back to PENDING)
+    // Full reset: clear payment AND approval fields
     updateData.paidAt = null;
+    updateData.markedPaidAt = null;
     updateData.approvedBy = null;
     updateData.approvedAt = null;
   }
-
-  // "cancel" needs no extra fields — just the status change to CANCELLED
 
   try {
     const updated = await prisma.payable.update({
@@ -190,9 +204,12 @@ export async function POST(
       include: { supplier: { select: { name: true } } },
     });
 
+    const newDs = computeDisplayStatus(updated.actionStatus, updated.dueDate);
+
     return NextResponse.json({
       id: updated.id,
-      status: updated.status,
+      actionStatus: updated.actionStatus,
+      displayStatus: newDs,
       supplierName: updated.supplier?.name ?? updated.payee ?? null,
       description: updated.description,
     });

@@ -43,7 +43,7 @@ import {
   type PayableFormData,
 } from "@/lib/payables/validation";
 import { SupplierCombobox } from "@/components/payables/supplier-combobox";
-import { STATUS_CONFIG, type PayableDetail } from "@/lib/payables/types";
+import { DISPLAY_STATUS_CONFIG, type PayableDetail } from "@/lib/payables/types";
 
 // =============================================================================
 // PayableForm — Create or edit a payable (título a pagar)
@@ -69,9 +69,8 @@ import { STATUS_CONFIG, type PayableDetail } from "@/lib/payables/types";
 // =============================================================================
 
 // The fixed list of tags — these are business-specific labels
+// Note: "segurado" and "protestado" were removed — they are now display statuses
 const AVAILABLE_TAGS = [
-  { value: "protestado", label: "Protestado" },
-  { value: "segurado", label: "Segurado" },
   { value: "renegociado", label: "Renegociado" },
   { value: "negativar", label: "Negativar" },
   { value: "duplicado", label: "Duplicado" },
@@ -87,6 +86,8 @@ const PAYMENT_METHODS = [
   { value: "CARTAO", label: "Cartão" },
   { value: "DINHEIRO", label: "Dinheiro" },
   { value: "CHEQUE", label: "Cheque" },
+  { value: "TAX_SLIP", label: "Guia Tributária" },
+  { value: "PAYROLL", label: "Folha de Pagamento" },
 ];
 
 // =============================================================================
@@ -126,6 +127,7 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
           category: payable.category as "REVENDA" | "DESPESA",
           issueDate: payable.issueDate.split("T")[0],
           dueDate: payable.dueDate.split("T")[0],
+          scheduledDate: payable.scheduledDate ? payable.scheduledDate.split("T")[0] : "",
           amount: formatCurrencyBR(Number(payable.amount)),
           payValue: formatCurrencyBR(Number(payable.payValue)),
           paymentMethod: payable.paymentMethod as PayableFormData["paymentMethod"],
@@ -140,6 +142,7 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
           category: undefined,
           issueDate: "",
           dueDate: "",
+          scheduledDate: "",
           amount: "",
           payValue: "",
           paymentMethod: undefined,
@@ -221,7 +224,7 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
         {/* Section 0: Metadata (edit mode only)                           */}
         {/* ============================================================= */}
         {isEditing && (() => {
-          const statusCfg = STATUS_CONFIG[payable.status] ?? { label: payable.status, variant: "outline" as const };
+          const statusCfg = DISPLAY_STATUS_CONFIG[payable.displayStatus] ?? { label: payable.displayStatus, variant: "outline" as const };
           return (
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
@@ -281,6 +284,14 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
                     >
                       {formatDistanceToNow(new Date(payable.paidAt), { addSuffix: true, locale: ptBR })}
                     </span>
+                    {payable.markedPaidAt && (
+                      <span
+                        className="text-xs text-muted-foreground mt-0.5"
+                        title={format(new Date(payable.markedPaidAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      >
+                        Registrado {formatDistanceToNow(new Date(payable.markedPaidAt), { addSuffix: true, locale: ptBR })}
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <p className="text-sm italic text-muted-foreground">Aguardando pagamento</p>
@@ -517,6 +528,55 @@ export function PayableForm({ payable, onSuccess }: PayableFormProps) {
               )}
             />
           </div>
+
+          {/* Scheduled date (optional) */}
+          <FormField
+            control={form.control}
+            name="scheduledDate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Data Prevista de Pagamento</FormLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !field.value && "text-muted-foreground",
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {field.value
+                          ? format(new Date(field.value + "T12:00:00"), "dd/MM/yyyy", {
+                              locale: ptBR,
+                            })
+                          : "Opcional"}
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={
+                        field.value ? new Date(field.value + "T12:00:00") : undefined
+                      }
+                      onSelect={(date) =>
+                        field.onChange(
+                          date ? format(date, "yyyy-MM-dd") : "",
+                        )
+                      }
+                      locale={ptBR}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <FormDescription>
+                  Data prevista para efetuar o pagamento (opcional)
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           {/* Currency inputs side by side */}
           <div className="grid grid-cols-2 gap-4">

@@ -31,13 +31,18 @@ enum DocumentType {
   CPF
 }
 
-enum PayableStatus {
-  PENDING
+enum ActionStatus {
   APPROVED
-  REJECTED
+  HELD
   PAID
-  OVERDUE
+  PROTESTED
   CANCELLED
+}
+
+enum PayableSource {
+  IMPORT
+  MANUAL
+  BANK_API
 }
 
 enum PaymentMethod {
@@ -47,6 +52,8 @@ enum PaymentMethod {
   CARTAO
   DINHEIRO
   CHEQUE
+  TAX_SLIP
+  PAYROLL
 }
 
 enum PayableCategory {
@@ -161,15 +168,20 @@ model Payable {
   payValue      Decimal         @map("pay_value") @db.Decimal(12, 2) // Valor a pagar
   jurosMulta    Decimal?        @default(0) @map("juros_multa") @db.Decimal(12, 2) // Juros/Multa (payValue - amount)
   issueDate     DateTime        @map("issue_date") @db.Date // Data de entrada
-  dueDate          DateTime        @map("due_date") @db.Date
-  overdueTrackedAt DateTime?       @map("overdue_tracked_at") @db.Date // Rolling tracking date for overdue re-imports
-  status           PayableStatus   @default(PENDING)
+  dueDate          DateTime        @map("due_date") @db.Date // Original due date — immutable after creation
+  scheduledDate    DateTime        @map("scheduled_date") @db.Date // Operational/planned payment date — mutable (work queue)
+  overdueTrackedAt DateTime?       @map("overdue_tracked_at") @db.Date // Rolling tracking date for overdue re-imports (segurado)
+  actionStatus     ActionStatus?   @map("action_status")
+  source           PayableSource   @default(IMPORT)
   category      PayableCategory
   paymentMethod PaymentMethod   @map("payment_method")
   invoiceNumber String?         @map("invoice_number") // Número NF-e
+  barcode       String?         // Boleto barcode for bank integration
+  taxSlipCode   String?         @map("tax_slip_code") // DAS/DARF/GNRE code
   tags          String[]        @default([]) // Multi-select labels
   notes         String?
   paidAt        DateTime?       @map("paid_at") @db.Timestamptz
+  markedPaidAt  DateTime?       @map("marked_paid_at") @db.Timestamptz // Server audit timestamp for when "pay" action was executed
   approvedBy    String?         @map("approved_by") @db.Uuid
   approvedAt    DateTime?       @map("approved_at") @db.Timestamptz
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz
@@ -185,7 +197,7 @@ model Payable {
   @@index([tenantId], map: "idx_payables_tenant")
   @@index([dueDate], map: "idx_payables_due")
   @@index([supplierId], map: "idx_payables_supplier")
-  @@index([status], map: "idx_payables_status")
+  @@index([actionStatus], map: "idx_payables_action_status")
   @@index([category], map: "idx_payables_category")
   @@map("payables")
 }

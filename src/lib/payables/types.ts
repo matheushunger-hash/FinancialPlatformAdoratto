@@ -2,6 +2,9 @@
 // Used by both the API routes (server) and the UI components (client).
 
 import type { AttachmentItem } from "@/lib/attachments/types";
+import type { DisplayStatus } from "./status";
+export { DISPLAY_STATUS_CONFIG } from "./status";
+export type { DisplayStatus } from "./status";
 
 export interface PayableListItem {
   id: string;
@@ -14,7 +17,7 @@ export interface PayableListItem {
   category: "REVENDA" | "DESPESA";
   issueDate: string;
   dueDate: string;
-  overdueTrackedAt: string | null; // Rolling tracking date for overdue re-imports
+  scheduledDate: string | null; // When payment is planned (mutable)
   amount: string; // Decimal serialized as string
   payValue: string;
   jurosMulta: string; // Decimal serialized as string (payValue - amount, min 0)
@@ -23,18 +26,17 @@ export interface PayableListItem {
   invoiceNumber: string | null;
   notes: string | null;
   tags: string[];
-  status: string;
+  actionStatus: string | null; // Stored action status (null = no action taken)
+  displayStatus: DisplayStatus; // Computed from actionStatus + dueDate
+  source: string; // IMPORT | MANUAL | BANK_API
   createdAt: string;
   updatedAt: string;
 }
 
 // Filter options for narrowing down the payables list.
-// Each field is optional — undefined means "show all" for that dimension.
-// Quick-filter pills set status OR tag (mutually exclusive).
-// Advanced filters (category, paymentMethod, dates) are independent.
+// Uses displayStatus instead of the old status enum.
 export interface PayableFilters {
-  status?: "PENDING" | "APPROVED" | "REJECTED" | "PAID" | "OVERDUE" | "CANCELLED";
-  tag?: string;
+  displayStatus?: DisplayStatus;
   category?: "REVENDA" | "DESPESA";
   paymentMethod?:
     | "BOLETO"
@@ -42,10 +44,11 @@ export interface PayableFilters {
     | "TRANSFERENCIA"
     | "CARTAO"
     | "DINHEIRO"
-    | "CHEQUE";
+    | "CHEQUE"
+    | "TAX_SLIP"
+    | "PAYROLL";
   dueDateFrom?: string; // yyyy-MM-dd
   dueDateTo?: string; // yyyy-MM-dd
-  overdue?: boolean; // Compound filter: PENDING/APPROVED with dueDate < today
 }
 
 // Extended detail for the edit form — includes metadata not in the list response.
@@ -54,23 +57,17 @@ export interface PayableDetail extends PayableListItem {
   approvedBy: string | null;
   approvedAt: string | null;
   paidAt: string | null;
+  markedPaidAt: string | null; // Server timestamp of when "pay" action was executed
+  overdueTrackedAt: string | null; // Rolling tracking date for overdue re-imports (date-only)
   createdByName: string; // Looked up from the users table
   approvedByName: string | null; // Looked up from the users table (if approved)
   attachments: AttachmentItem[]; // Files attached to this payable (ADR-013)
 }
 
-// Only these statuses allow editing — terminal statuses are locked.
-export const EDITABLE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
-
-// Status → display label + badge variant, shared across table and form components.
-export const STATUS_CONFIG: Record<string, { label: string; variant: "outline" | "default" | "destructive" | "secondary" }> = {
-  PENDING: { label: "Pendente", variant: "outline" },
-  APPROVED: { label: "Aprovado", variant: "default" },
-  REJECTED: { label: "Rejeitado", variant: "destructive" },
-  PAID: { label: "Pago", variant: "default" },
-  OVERDUE: { label: "Vencido", variant: "destructive" },
-  CANCELLED: { label: "Cancelado", variant: "secondary" },
-};
+// Editable when actionStatus is null (temporal) or APPROVED
+export function isEditable(actionStatus: string | null): boolean {
+  return actionStatus === null || actionStatus === "APPROVED";
+}
 
 // Will be used by ADR-008 (table), defined now for the API response
 export interface PayablesListResponse {
@@ -84,6 +81,6 @@ export interface PayablesListResponse {
 // Response from the batch transition endpoint (ADR-011).
 // Best-effort: each item either succeeds or fails independently.
 export interface BatchTransitionResponse {
-  succeeded: { id: string; status: string }[];
+  succeeded: { id: string; actionStatus: string | null }[];
   failed: { id: string; error: string }[];
 }

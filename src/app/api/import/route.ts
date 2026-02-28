@@ -31,7 +31,7 @@ import { REQUIRED_FIELDS } from "@/lib/import/types";
 const MAX_ROWS = 1000;
 
 const VALID_CATEGORIES = ["REVENDA", "DESPESA"];
-const VALID_METHODS = ["BOLETO", "PIX", "TRANSFERENCIA", "CARTAO", "DINHEIRO", "CHEQUE"];
+const VALID_METHODS = ["BOLETO", "PIX", "TRANSFERENCIA", "CARTAO", "DINHEIRO", "CHEQUE", "TAX_SLIP", "PAYROLL"];
 
 export async function POST(request: NextRequest) {
   const ctx = await getAuthContext();
@@ -350,8 +350,13 @@ export async function POST(request: NextRequest) {
       // Determine paid status from the "Pago?" column
       const rawPaidStatus = getField(row, "paidStatus");
       const isPaid = /^sim$/i.test(String(rawPaidStatus || "").trim());
-      const status = isPaid ? "PAID" : "PENDING";
       const paidAt = isPaid ? new Date() : null;
+      const markedPaidAt = isPaid ? new Date() : null;
+
+      // Determine actionStatus from import data
+      // Paid takes precedence, then segurado, else null (temporal)
+      const importActionStatus = isPaid ? "PAID" : (isSegurado ? "HELD" : null);
+      // actionStatus determines the stored workflow state
 
       // Determine supplier vs payee based on name patterns
       const rawDocument = getField(row, "document");
@@ -409,13 +414,17 @@ export async function POST(request: NextRequest) {
       const parsedOverdueTrackedAt = (isSegurado && resolvedRefDate)
         ? vencimentoDate
         : null;
+      // scheduledDate: segurado uses rolling date, others use dueDate
+      const parsedScheduledDate = (isSegurado && resolvedRefDate)
+        ? vencimentoDate
+        : parsedDueDate;
 
       // Update mode: two-tier matching strategy
       // Tier 1: invoiceNumber (stable across date/amount changes)
       // Tier 2: supplier + amount + dueDate (fallback when no invoice number)
       // dueDate is NEVER overwritten — overdueTrackedAt captures rolling dates (#96)
       if (updateExisting && resolvedSupplierId) {
-        let existing: { id: string; dueDate: Date } | null = null;
+        let existing: { id: string; dueDate: Date; actionStatus: string | null } | null = null;
         let matchedByInvoice = false;
 
         // Tier 1: Match by invoice number (stable across date/amount changes)
@@ -426,7 +435,7 @@ export async function POST(request: NextRequest) {
               supplierId: resolvedSupplierId,
               invoiceNumber: invoiceStr,
             },
-            select: { id: true, dueDate: true },
+            select: { id: true, dueDate: true, actionStatus: true },
           });
           if (existing) matchedByInvoice = true;
         }
@@ -440,7 +449,7 @@ export async function POST(request: NextRequest) {
               amount,
               dueDate: parsedDueDate,
             },
-            select: { id: true, dueDate: true },
+            select: { id: true, dueDate: true, actionStatus: true },
           });
         }
 
@@ -449,27 +458,34 @@ export async function POST(request: NextRequest) {
           const trackingDate = parsedOverdueTrackedAt
             ?? (existing.dueDate.getTime() !== parsedDueDate.getTime() ? parsedDueDate : null);
 
+          // Guard: never downgrade a PAID record via import.
+          // Reversing payment should only happen through the UI transition workflow.
+          // In Prisma, `undefined` means "don't touch this field".
+          const existingIsPaid = existing.actionStatus === "PAID";
+
           await prisma.payable.update({
             where: { id: existing.id },
             data: matchedByInvoice
               ? {
                   // Confident match — safe to update financial fields (but NOT dueDate)
-                  ...(trackingDate ? { overdueTrackedAt: trackingDate } : {}),
+                  ...(trackingDate ? { overdueTrackedAt: trackingDate, scheduledDate: trackingDate } : {}),
                   ...(tags.length > 0 ? { tags } : {}),
                   issueDate: parsedIssueDate,
                   amount,
                   payValue,
                   jurosMulta,
-                  status,
-                  paidAt,
+                  actionStatus: existingIsPaid ? undefined : importActionStatus,
+                  paidAt: existingIsPaid ? undefined : paidAt,
+                  markedPaidAt: existingIsPaid ? undefined : markedPaidAt,
                   description,
                 }
               : {
                   // Heuristic match — conservative update only
-                  ...(trackingDate ? { overdueTrackedAt: trackingDate } : {}),
+                  ...(trackingDate ? { overdueTrackedAt: trackingDate, scheduledDate: trackingDate } : {}),
                   ...(tags.length > 0 ? { tags } : {}),
-                  status,
-                  paidAt,
+                  actionStatus: existingIsPaid ? undefined : importActionStatus,
+                  paidAt: existingIsPaid ? undefined : paidAt,
+                  markedPaidAt: existingIsPaid ? undefined : markedPaidAt,
                   jurosMulta,
                 },
           });
@@ -491,14 +507,17 @@ export async function POST(request: NextRequest) {
           jurosMulta,
           issueDate: parsedIssueDate,
           dueDate: parsedDueDate,
+          scheduledDate: parsedScheduledDate,
           ...(parsedOverdueTrackedAt ? { overdueTrackedAt: parsedOverdueTrackedAt } : {}),
-          status,
+          actionStatus: importActionStatus,
+          source: "IMPORT",
           category,
           paymentMethod,
           invoiceNumber: invoiceStr || null,
           notes: notesStr || null,
           tags,
           paidAt,
+          markedPaidAt,
         },
       });
 

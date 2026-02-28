@@ -2,29 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
 import { TRANSITIONS } from "@/lib/payables/transitions";
+import { computeDisplayStatus } from "@/lib/payables/status";
 import type { BatchTransitionResponse } from "@/lib/payables/types";
+import type { ActionStatus } from "@prisma/client";
 
 // =============================================================================
-// POST /api/payables/batch-transition — Batch status transition (ADR-011)
+// POST /api/payables/batch-transition — Batch actionStatus transition
 // =============================================================================
-// Processes multiple payable transitions in one request. Best-effort: each item
-// is processed independently — partial success is OK (not all-or-nothing).
-//
-// Request body: { ids: string[], action: string, paidAt?: string }
-// Response:     { succeeded: [...], failed: [...] }
+// Best-effort: each item processed independently. Uses actionStatus-based
+// transitions (null → "NULL" key).
 // =============================================================================
 
-// Known actions — used for early validation before looping
-const VALID_ACTIONS = new Set(["approve", "reject", "pay", "reopen", "reverse", "cancel", "unapprove"]);
+const VALID_ACTIONS = new Set([
+  "approve", "hold", "pay", "cancel", "protest",
+  "unapprove", "release", "reopen", "reverse",
+]);
 
 export async function POST(request: NextRequest) {
-  // 1. Auth check
   const ctx = await getAuthContext();
   if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // 2. Parse request body
   let body: { ids?: string[]; action?: string; paidAt?: string };
   try {
     body = await request.json();
@@ -34,7 +33,6 @@ export async function POST(request: NextRequest) {
 
   const { ids, action, paidAt } = body;
 
-  // 3. Validate inputs
   if (!Array.isArray(ids) || ids.length === 0) {
     return NextResponse.json(
       { error: "Campo 'ids' deve ser um array não vazio" },
@@ -63,13 +61,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 4. Process each item — best-effort
   const succeeded: BatchTransitionResponse["succeeded"] = [];
   const failed: BatchTransitionResponse["failed"] = [];
 
   for (const id of ids) {
     try {
-      // 4a. Fetch payable (scoped to tenant)
       const payable = await prisma.payable.findFirst({
         where: { id, tenantId: ctx.tenantId },
       });
@@ -79,29 +75,34 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // 4b. Check if the transition is valid for this payable's current status
-      // Normalize to uppercase — pg driver adapter may return mixed-case enum values
-      const status = payable.status.toUpperCase();
-      const transitions = TRANSITIONS[status] ?? [];
-      const transition = transitions.find((t) => t.action === action);
+      // Look up transition by actionStatus key
+      const key = payable.actionStatus ?? "NULL";
+      const ds = computeDisplayStatus(payable.actionStatus, payable.dueDate);
+      const transitions = TRANSITIONS[key] ?? [];
+      const transition = transitions.find((t) => {
+        if (t.action !== action) return false;
+        if (t.requiresDisplayStatus) {
+          return t.requiresDisplayStatus.includes(ds);
+        }
+        return true;
+      });
 
       if (!transition) {
         failed.push({
           id,
-          error: `Ação '${action}' não válida para status '${payable.status}'`,
+          error: `Ação '${action}' não válida para o status atual`,
         });
         continue;
       }
 
-      // 4c. Check role
       if (!transition.requiredRoles.includes(ctx.role)) {
         failed.push({ id, error: "Sem permissão para esta ação" });
         continue;
       }
 
-      // 4d. Build update data (same logic as the single-transition route)
+      // Build update data
       const updateData: Record<string, unknown> = {
-        status: transition.to,
+        actionStatus: transition.to as ActionStatus | null,
       };
 
       if (action === "approve") {
@@ -109,30 +110,33 @@ export async function POST(request: NextRequest) {
         updateData.approvedAt = new Date();
       }
 
-      if (action === "pay") {
-        updateData.paidAt = new Date(paidAt + "T12:00:00");
+      if (action === "hold") {
+        // No extra fields needed
       }
 
-      if (action === "reopen" || action === "unapprove") {
+      if (action === "pay") {
+        updateData.paidAt = new Date(paidAt + "T12:00:00");
+        updateData.markedPaidAt = new Date();
+      }
+
+      if (action === "unapprove" || action === "release" || action === "reopen") {
         updateData.approvedBy = null;
         updateData.approvedAt = null;
       }
 
       if (action === "reverse") {
         updateData.paidAt = null;
+        updateData.markedPaidAt = null;
         updateData.approvedBy = null;
         updateData.approvedAt = null;
       }
 
-      // "cancel" needs no extra fields — just the status change to CANCELLED
-
-      // 4e. Apply the update
       await prisma.payable.update({
         where: { id },
         data: updateData,
       });
 
-      succeeded.push({ id, status: transition.to });
+      succeeded.push({ id, actionStatus: transition.to });
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Erro interno do servidor";

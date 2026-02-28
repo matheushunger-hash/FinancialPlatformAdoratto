@@ -3,17 +3,129 @@ import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
 import { createClient } from "@/lib/supabase/server";
 import { payableFormSchema, parseCurrency } from "@/lib/payables/validation";
-import { EDITABLE_STATUSES } from "@/lib/payables/types";
+import { isEditable } from "@/lib/payables/types";
+import { computeDisplayStatus } from "@/lib/payables/status";
 import type { PayableDetail } from "@/lib/payables/types";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Helper: build a PayableDetail response from a Prisma result
+function buildDetailResponse(
+  payable: {
+    id: string;
+    supplierId: string | null;
+    supplier: { name: string; document: string; documentType: string } | null;
+    payee: string | null;
+    description: string;
+    category: string;
+    issueDate: Date;
+    dueDate: Date;
+    scheduledDate: Date | null;
+    amount: { toString(): string };
+    payValue: { toString(): string };
+    jurosMulta: { toString(): string } | null;
+    paymentMethod: string;
+    invoiceNumber: string | null;
+    notes: string | null;
+    tags: string[];
+    actionStatus: string | null;
+    source: string;
+    createdAt: Date;
+    updatedAt: Date;
+    approvedBy: string | null;
+    approvedAt: Date | null;
+    paidAt: Date | null;
+    markedPaidAt: Date | null;
+    overdueTrackedAt: Date | null;
+    userId: string;
+    attachments: Array<{
+      id: string;
+      fileName: string;
+      fileUrl: string;
+      fileSize: number;
+      mimeType: string;
+      createdAt: Date;
+    }>;
+  },
+  creatorName: string,
+  approverName: string | null,
+): PayableDetail {
+  const ds = computeDisplayStatus(
+    payable.actionStatus as import("@prisma/client").ActionStatus | null,
+    payable.dueDate,
+  );
+
+  const todayForAging = new Date();
+  todayForAging.setHours(0, 0, 0, 0);
+  const todayMs = todayForAging.getTime();
+  const isOverdue = payable.actionStatus === null && payable.dueDate.getTime() < todayMs;
+
+  return {
+    id: payable.id,
+    supplierId: payable.supplierId,
+    supplierName: payable.supplier?.name ?? null,
+    supplierDocument: payable.supplier?.document ?? null,
+    supplierDocumentType: (payable.supplier?.documentType as "CNPJ" | "CPF") ?? null,
+    payee: payable.payee ?? null,
+    description: payable.description,
+    category: payable.category as "REVENDA" | "DESPESA",
+    issueDate: payable.issueDate.toISOString(),
+    dueDate: payable.dueDate.toISOString(),
+    scheduledDate: payable.scheduledDate?.toISOString() ?? null,
+    amount: payable.amount.toString(),
+    payValue: payable.payValue.toString(),
+    jurosMulta: payable.jurosMulta?.toString() ?? "0",
+    daysOverdue: isOverdue
+      ? Math.floor((todayMs - payable.dueDate.getTime()) / 86_400_000)
+      : null,
+    paymentMethod: payable.paymentMethod,
+    invoiceNumber: payable.invoiceNumber,
+    notes: payable.notes,
+    tags: payable.tags,
+    actionStatus: payable.actionStatus,
+    displayStatus: ds,
+    source: payable.source,
+    createdAt: payable.createdAt.toISOString(),
+    updatedAt: payable.updatedAt.toISOString(),
+    approvedBy: payable.approvedBy,
+    approvedAt: payable.approvedAt?.toISOString() ?? null,
+    paidAt: payable.paidAt?.toISOString() ?? null,
+    markedPaidAt: payable.markedPaidAt?.toISOString() ?? null,
+    overdueTrackedAt: payable.overdueTrackedAt?.toISOString()?.split("T")[0] ?? null,
+    createdByName: creatorName,
+    approvedByName: approverName,
+    attachments: payable.attachments.map((a) => ({
+      id: a.id,
+      payableId: payable.id,
+      fileName: a.fileName,
+      fileUrl: a.fileUrl,
+      fileSize: a.fileSize,
+      mimeType: a.mimeType,
+      createdAt: a.createdAt.toISOString(),
+    })),
+  };
+}
+
+const PAYABLE_INCLUDE = {
+  supplier: {
+    select: { name: true, document: true, documentType: true },
+  },
+  attachments: {
+    orderBy: { createdAt: "desc" as const },
+    select: {
+      id: true,
+      fileName: true,
+      fileUrl: true,
+      fileSize: true,
+      mimeType: true,
+      createdAt: true,
+    },
+  },
+};
+
 // =============================================================================
 // GET /api/payables/[id] — Fetch a single payable with full detail
-// =============================================================================
-// Returns PayableDetail shape — includes creator/approver names that the edit
-// form needs for its read-only metadata panel.
 // =============================================================================
 
 export async function GET(
@@ -34,22 +146,7 @@ export async function GET(
   try {
     const payable = await prisma.payable.findFirst({
       where: { id, tenantId: ctx.tenantId },
-      include: {
-        supplier: {
-          select: { name: true, document: true, documentType: true },
-        },
-        attachments: {
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            fileName: true,
-            fileUrl: true,
-            fileSize: true,
-            mimeType: true,
-            createdAt: true,
-          },
-        },
-      },
+      include: PAYABLE_INCLUDE,
     });
 
     if (!payable) {
@@ -59,13 +156,11 @@ export async function GET(
       );
     }
 
-    // Look up creator name from users table
     const creator = await prisma.user.findUnique({
       where: { id: payable.userId },
       select: { name: true },
     });
 
-    // Look up approver name if the payable has been approved
     let approverName: string | null = null;
     if (payable.approvedBy) {
       const approver = await prisma.user.findUnique({
@@ -75,55 +170,13 @@ export async function GET(
       approverName = approver?.name ?? null;
     }
 
-    const detail: PayableDetail = {
-      id: payable.id,
-      supplierId: payable.supplierId,
-      supplierName: payable.supplier?.name ?? null,
-      supplierDocument: payable.supplier?.document ?? null,
-      supplierDocumentType: (payable.supplier?.documentType as "CNPJ" | "CPF") ?? null,
-      payee: payable.payee ?? null,
-      description: payable.description,
-      category: payable.category,
-      issueDate: payable.issueDate.toISOString(),
-      dueDate: payable.dueDate.toISOString(),
-      overdueTrackedAt: payable.overdueTrackedAt?.toISOString() ?? null,
-      amount: payable.amount.toString(),
-      payValue: payable.payValue.toString(),
-      jurosMulta: payable.jurosMulta?.toString() ?? "0",
-      daysOverdue: (() => {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        return (
-          ["PENDING", "APPROVED", "OVERDUE"].includes(payable.status) &&
-          payable.dueDate.getTime() < now.getTime()
-        )
-          ? Math.floor((now.getTime() - payable.dueDate.getTime()) / 86_400_000)
-          : null;
-      })(),
-      paymentMethod: payable.paymentMethod,
-      invoiceNumber: payable.invoiceNumber,
-      notes: payable.notes,
-      tags: payable.tags,
-      status: payable.status,
-      createdAt: payable.createdAt.toISOString(),
-      updatedAt: payable.updatedAt.toISOString(),
-      approvedBy: payable.approvedBy,
-      approvedAt: payable.approvedAt?.toISOString() ?? null,
-      paidAt: payable.paidAt?.toISOString() ?? null,
-      createdByName: creator?.name ?? "Usuário desconhecido",
-      approvedByName: approverName,
-      attachments: payable.attachments.map((a) => ({
-        id: a.id,
-        payableId: payable.id,
-        fileName: a.fileName,
-        fileUrl: a.fileUrl,
-        fileSize: a.fileSize,
-        mimeType: a.mimeType,
-        createdAt: a.createdAt.toISOString(),
-      })),
-    };
-
-    return NextResponse.json(detail);
+    return NextResponse.json(
+      buildDetailResponse(
+        payable as Parameters<typeof buildDetailResponse>[0],
+        creator?.name ?? "Usuário desconhecido",
+        approverName,
+      ),
+    );
   } catch (err) {
     console.error("[GET /api/payables/[id]] error:", err);
     const message =
@@ -135,9 +188,8 @@ export async function GET(
 // =============================================================================
 // PATCH /api/payables/[id] — Update a payable's editable fields
 // =============================================================================
-// Only allows editing when status is PENDING, APPROVED, or REJECTED.
-// Terminal statuses (PAID, OVERDUE, CANCELLED) are locked.
-// The supplier (supplierId) cannot be changed after creation.
+// Only allows editing when actionStatus is null (temporal) or APPROVED.
+// dueDate is immutable after creation — use scheduledDate instead.
 // =============================================================================
 
 export async function PATCH(
@@ -163,7 +215,6 @@ export async function PATCH(
   }
 
   try {
-    // Verify the payable exists and belongs to this tenant
     const existing = await prisma.payable.findFirst({
       where: { id, tenantId: ctx.tenantId },
     });
@@ -175,15 +226,14 @@ export async function PATCH(
       );
     }
 
-    // Check if the payable's status allows editing
-    if (!EDITABLE_STATUSES.includes(existing.status as typeof EDITABLE_STATUSES[number])) {
+    // Editability check: actionStatus must be null or APPROVED
+    if (!isEditable(existing.actionStatus)) {
       return NextResponse.json(
         { error: "Este título não pode ser editado no status atual" },
         { status: 400 },
       );
     }
 
-    // Validate the request body with the same Zod schema used for creation
     const parsed = payableFormSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
@@ -194,12 +244,11 @@ export async function PATCH(
 
     const data = parsed.data;
 
-    // Convert currency strings to numbers for Prisma's Decimal type
     const parsedAmount = parseCurrency(data.amount);
     const parsedPayValue = parseCurrency(data.payValue);
     const jurosMulta = parsedPayValue > parsedAmount ? parsedPayValue - parsedAmount : 0;
 
-    // Update all form fields EXCEPT supplierId and status
+    // Update all form fields EXCEPT supplierId, status, and dueDate (immutable)
     const updated = await prisma.payable.update({
       where: { id },
       data: {
@@ -209,37 +258,23 @@ export async function PATCH(
         payValue: parsedPayValue,
         jurosMulta,
         issueDate: new Date(data.issueDate + "T12:00:00"),
-        dueDate: new Date(data.dueDate + "T12:00:00"),
+        // dueDate is immutable after creation
+        scheduledDate: data.scheduledDate
+          ? new Date(data.scheduledDate + "T12:00:00")
+          : undefined,
         paymentMethod: data.paymentMethod,
         invoiceNumber: data.invoiceNumber || null,
         tags: data.tags,
         notes: data.notes || null,
       },
-      include: {
-        supplier: {
-          select: { name: true, document: true, documentType: true },
-        },
-        attachments: {
-          orderBy: { createdAt: "desc" },
-          select: {
-            id: true,
-            fileName: true,
-            fileUrl: true,
-            fileSize: true,
-            mimeType: true,
-            createdAt: true,
-          },
-        },
-      },
+      include: PAYABLE_INCLUDE,
     });
 
-    // Look up creator name
     const creator = await prisma.user.findUnique({
       where: { id: updated.userId },
       select: { name: true },
     });
 
-    // Look up approver name if applicable
     let approverName: string | null = null;
     if (updated.approvedBy) {
       const approver = await prisma.user.findUnique({
@@ -249,55 +284,13 @@ export async function PATCH(
       approverName = approver?.name ?? null;
     }
 
-    const detail: PayableDetail = {
-      id: updated.id,
-      supplierId: updated.supplierId,
-      supplierName: updated.supplier?.name ?? null,
-      supplierDocument: updated.supplier?.document ?? null,
-      supplierDocumentType: (updated.supplier?.documentType as "CNPJ" | "CPF") ?? null,
-      payee: updated.payee ?? null,
-      description: updated.description,
-      category: updated.category,
-      issueDate: updated.issueDate.toISOString(),
-      dueDate: updated.dueDate.toISOString(),
-      overdueTrackedAt: updated.overdueTrackedAt?.toISOString() ?? null,
-      amount: updated.amount.toString(),
-      payValue: updated.payValue.toString(),
-      jurosMulta: updated.jurosMulta?.toString() ?? "0",
-      daysOverdue: (() => {
-        const now = new Date();
-        now.setHours(0, 0, 0, 0);
-        return (
-          ["PENDING", "APPROVED", "OVERDUE"].includes(updated.status) &&
-          updated.dueDate.getTime() < now.getTime()
-        )
-          ? Math.floor((now.getTime() - updated.dueDate.getTime()) / 86_400_000)
-          : null;
-      })(),
-      paymentMethod: updated.paymentMethod,
-      invoiceNumber: updated.invoiceNumber,
-      notes: updated.notes,
-      tags: updated.tags,
-      status: updated.status,
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-      approvedBy: updated.approvedBy,
-      approvedAt: updated.approvedAt?.toISOString() ?? null,
-      paidAt: updated.paidAt?.toISOString() ?? null,
-      createdByName: creator?.name ?? "Usuário desconhecido",
-      approvedByName: approverName,
-      attachments: updated.attachments.map((a) => ({
-        id: a.id,
-        payableId: updated.id,
-        fileName: a.fileName,
-        fileUrl: a.fileUrl,
-        fileSize: a.fileSize,
-        mimeType: a.mimeType,
-        createdAt: a.createdAt.toISOString(),
-      })),
-    };
-
-    return NextResponse.json(detail);
+    return NextResponse.json(
+      buildDetailResponse(
+        updated as Parameters<typeof buildDetailResponse>[0],
+        creator?.name ?? "Usuário desconhecido",
+        approverName,
+      ),
+    );
   } catch (err) {
     console.error("[PATCH /api/payables/[id]] error:", err);
     const message =
@@ -308,9 +301,6 @@ export async function PATCH(
 
 // =============================================================================
 // DELETE /api/payables/[id] — Permanently delete a payable (ADMIN only)
-// =============================================================================
-// Deletes Storage files first, then the DB record. Prisma cascade handles
-// attachment DB rows automatically (onDelete: Cascade in schema).
 // =============================================================================
 
 export async function DELETE(
@@ -333,7 +323,6 @@ export async function DELETE(
   }
 
   try {
-    // Verify the payable exists and belongs to this tenant
     const payable = await prisma.payable.findFirst({
       where: { id, tenantId: ctx.tenantId },
     });
@@ -345,13 +334,11 @@ export async function DELETE(
       );
     }
 
-    // Fetch attachment file paths for storage cleanup
     const attachments = await prisma.attachment.findMany({
       where: { payableId: id },
       select: { fileUrl: true },
     });
 
-    // Step 1: Delete files from Supabase Storage (if any)
     if (attachments.length > 0) {
       const filePaths = attachments.map((a) => a.fileUrl);
       const supabase = await createClient();
@@ -361,12 +348,9 @@ export async function DELETE(
 
       if (storageError) {
         console.error("[DELETE /api/payables/[id]] Storage error:", storageError);
-        // Continue with DB delete — orphaned storage files are less harmful
-        // than leaving a payable the user explicitly asked to delete
       }
     }
 
-    // Step 2: Delete the payable (cascade deletes attachment DB records)
     await prisma.payable.delete({ where: { id } });
 
     return NextResponse.json({ success: true });
