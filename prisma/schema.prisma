@@ -338,7 +338,7 @@ model PaymentReceipt {
 model AuditLog {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   tenantId   String   @map("tenant_id") @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
   action     String
   entityType String   @map("entity_type")
   entityId   String   @map("entity_id")
@@ -347,7 +347,7 @@ model AuditLog {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tenantId], map: "idx_audit_log_tenant")
   @@index([entityType, entityId], map: "idx_audit_log_entity")
