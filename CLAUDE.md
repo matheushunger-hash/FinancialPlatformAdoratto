@@ -143,6 +143,12 @@ Standard workflow for completing an ADR/feature:
 - **Detail API route**: `GET /api/payables/[id]` returns extended type (adds metadata) — separate from list to keep responses lean
 - **Server-side CSV export**: `GET /api/export` with same filter params as list, `take: MAX_EXPORT_ROWS` cap, `Content-Type: text/csv`
 - **Import update mode**: match existing payables by `tenantId + supplierId + amount + dueDate` → update if found, create if not. `dueDate` is NEVER overwritten after creation — rolling dates go to `overdueTrackedAt` (#96)
+- **Import PAID guard**: never downgrade a PAID record via import — use `undefined` (Prisma skip) for `actionStatus`, `paidAt`, `markedPaidAt` when `existing.actionStatus === "PAID"`
+- **Audit timestamps pattern**: `paidAt` = user-entered payment date (noon trick), `markedPaidAt` = `new Date()` server timestamp of when the action was executed. Clear both together on reverse/force-clear. Set `markedPaidAt` everywhere `paidAt` is set.
+- **Rollover endpoint**: `PATCH /api/payables/[id]/rollover` — updates `scheduledDate` only (never `dueDate`), writes before/after to `AuditLog`, guards against PAID/CANCELLED
+- **AuditLog usage**: `{ action, entityType, entityId, before: { field: old }, after: { field: new, reason? } }` — JSON snapshots for change tracking
+- **Terminal state**: `CANCELLED: []` in transitions map — empty array blocks normal workflow. Force-status (ADMIN) still works as escape hatch.
+- **paidAt future-date guard**: `endOfToday.setHours(23, 59, 59, 999)` then `paidDate > endOfToday` — allows same-day, rejects future
 
 ### Tables (TanStack)
 - `manualSorting: true` + `manualPagination: true` for server-side data — TanStack manages UI state only

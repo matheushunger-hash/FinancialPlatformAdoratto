@@ -5,6 +5,72 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-28 — Issue #100 Phase 3: API Corrections
+
+**What was built:**
+- New rollover endpoint: `PATCH /api/payables/[id]/rollover` — updates only `scheduledDate`, writes before/after to AuditLog (first real usage of audit table)
+- Future-date validation on `paidAt` across 3 locations (force-status, normal pay, batch pay)
+- `scheduledDate` added to listing SORT_MAP — enables `?sort=scheduledDate&order=asc`
+- Removed `reopen` from CANCELLED transitions — cancellation is now a terminal state
+
+**Files changed:** 5 files (+325/-102), 1 new
+- `src/app/api/payables/[id]/rollover/route.ts` — new PATCH endpoint with AuditLog
+- `src/app/api/payables/[id]/transition/route.ts` — paidAt future validation (2 locations)
+- `src/app/api/payables/batch-transition/route.ts` — paidAt future validation + remove reopen from VALID_ACTIONS
+- `src/app/api/payables/route.ts` — scheduledDate in SORT_MAP
+- `src/lib/payables/transitions.ts` — CANCELLED: [] (terminal state)
+
+**What went well:**
+- Analysis phase correctly identified 3 of 5 tasks were already done — saved significant rework
+- Clean execution: `tsc --noEmit` passed first try
+- Rollover endpoint followed existing transition route pattern exactly
+
+**Mistakes caught:**
+- Remembered to also remove `reopen` from batch transition's `VALID_ACTIONS` set — plan didn't explicitly mention this but it was necessary for consistency
+
+**Patterns established:**
+- AuditLog usage: `{ action: "rollover", entityType: "payable", entityId, before: { field: old }, after: { field: new, reason? } }`
+- Future-date validation: `endOfToday.setHours(23, 59, 59, 999)` then compare — allows same-day payments, rejects tomorrow+
+- Terminal state pattern: empty transitions array `[]` blocks normal workflow; force-status (ADMIN) still works as escape hatch
+- Pre-implementation analysis: compare issue tasks against codebase before planning — avoid reimplementing what exists
+
+---
+
+### 2026-02-28 — Issue #99 Phase 2: Schema & Database Corrections
+
+**What was built:**
+- Added `overdueTrackedAt` (`@db.Date`) to Payable model — fixes live bug where import route was writing to a non-existent column
+- Added `markedPaidAt` (`@db.Timestamptz`) to Payable model — server audit timestamp for when "pay" action was executed
+- Added doc comments to `dueDate` (immutable) and `scheduledDate` (mutable work queue) in schema
+- Set/clear `markedPaidAt` in all 3 routes: single transition, batch transition, import
+- Import PAID guard: `existingIsPaid` check prevents re-imports from downgrading PAID records (linter-added refinement)
+- Exposed both fields in detail API (`GET /api/payables/[id]`)
+- Display "Registrado [relative time]" in payable form metadata panel
+
+**Files changed:** 7 files, +365/-272 lines
+- `prisma/schema.prisma` — two new fields + doc comments
+- `src/lib/payables/types.ts` — `PayableDetail` interface updated
+- `src/app/api/payables/[id]/transition/route.ts` — `markedPaidAt` on pay/force-PAID/reverse/clear
+- `src/app/api/payables/batch-transition/route.ts` — `markedPaidAt` on pay/reverse
+- `src/app/api/import/route.ts` — `markedPaidAt` alongside `paidAt`, PAID guard
+- `src/app/api/payables/[id]/route.ts` — expose both new fields in response
+- `src/components/payables/payable-form.tsx` — "Registrado em" display
+
+**What went well:**
+- Clean execution — plan was specific enough to implement all 7 files without any errors
+- `tsc --noEmit` passed on first try, zero issues
+- `prisma db push` applied cleanly (nullable fields = no data loss risk)
+
+**Mistakes caught:**
+- Linter/user refined the import route to add PAID guard: when an existing record is already PAID, use `undefined` (Prisma skip) instead of overwriting with import data. This prevents re-imports from accidentally clearing payment status.
+
+**Patterns established:**
+- Audit timestamp pattern: separate user-entered date (`paidAt` with noon trick) from server action timestamp (`markedPaidAt` with `new Date()`). Always clear both together on reverse.
+- Import PAID guard: `existing.actionStatus === "PAID"` → use `undefined` to skip overwriting status/payment fields. Reversing payment should only happen through UI transitions.
+- `overdueTrackedAt` uses `.toISOString()?.split("T")[0]` in API response — date-only field returns date-only string
+
+---
+
 ### 2026-02-24 — Issue #91: Buyer Budget Gauge — Overdue Awareness — CLOSED
 
 **What was built:**
@@ -903,3 +969,33 @@ Split each supplier's horizontal bar into 3 color-coded segments: Pago (teal), P
 - Client-side sort for small tables: `useMemo` + `useState<{field, order}>` — no re-fetch for 10 items or fewer
 - `statusRank()` pattern: map display statuses to ordinal numbers for clean sort grouping
 - Passing custom props to Recharts Tooltip: `<Tooltip content={<CustomTooltip budgetLimit={n} />} />`
+
+---
+
+## Session — 2026-02-26: AR Transactions Page UI (#69)
+
+**What was done:**
+- Implemented the main data view for the AR (Accounts Receivable) module — a filterable, sortable, paginated table of imported card transactions
+- Created 4 new components following the exact payables orchestrator + TanStack Table pattern:
+  - `transactions-table.tsx` — 9-column TanStack table with responsive hiding, skeletons, sort indicators
+  - `transactions-filters.tsx` — 5 status quick-filter pills + brand/acquirer dropdowns + date range popovers
+  - `transactions-pagination.tsx` — count display + prev/next buttons
+  - `transactions-view.tsx` — orchestrator owning fetch, debounced search, sort, filters, pagination, gross/net summary bar
+- Wired the page as a server component with `getAuthContext()` + Suspense boundary
+- Fixed nav config to point sidebar link from stub `/recebimentos` to actual `/recebimentos/transacoes`
+- Zero TypeScript errors, 6 files changed (4 new + 2 edited)
+
+**What went well:**
+1. Clean plan-first approach: `/plan #69` produced a complete spec, `/implement #69` executed it with no improvisation
+2. Reusing the established payables pattern made implementation fast and consistent — no architectural decisions needed
+3. API and types were already built from prior sessions (#61, #65), so this was purely frontend
+4. Caught the nav config issue quickly when user reported the wrong page was showing
+
+**Mistakes caught — avoid next time:**
+1. **Nav link pointed to stub parent page**: The sidebar linked to `/dashboard/recebimentos` (a placeholder) instead of `/dashboard/recebimentos/transacoes` (the actual table). Always verify nav links when building new sub-pages — stubs can mislead users.
+
+**Patterns established:**
+- AR table replicates payables pattern exactly: orchestrator → table + filters + pagination (simplified — no batch actions, row selection, or transitions for MVP)
+- Summary bar (gross/net totals) uses API-returned aggregates — no client-side computation needed
+- `RIGHT_ALIGNED` Set for cleaner column alignment logic (vs inline string checks in payables)
+- `formatPct()` helper alongside `formatBRL()` for fee percentage display
