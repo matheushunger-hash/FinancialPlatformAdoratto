@@ -1050,3 +1050,22 @@ Split each supplier's horizontal bar into 3 color-coded segments: Pago (teal), P
 - AR dashboard follows a simpler variant of the AP pattern: no period selector, no sparklines, no charts — just snapshot KPIs + upcoming table
 - `topBrandForDay()` pattern: groupBy gives aggregates but not "most frequent category" — solve by fetching raw pairs and computing in JS (small dataset, avoids raw SQL)
 - `DeltaBadge` sub-component reused for week-over-week trending indicator
+
+---
+
+### 2026-02-28 — Issue #71: AR Receipt Registration — API + UI
+
+**What was built:**
+- POST `/api/ar/receipts` — validates transaction is PENDING/OVERDUE, computes divergence, atomically creates PaymentReceipt + updates CardTransaction status + AuditLog via `prisma.$transaction()`
+- `receipt-registration-dialog.tsx` — Dialog with date picker, currency input, notes textarea, and live divergence preview (green "Valores conferem" / red "Divergência: R$ X,XX")
+- Wired into `transactions-table.tsx` (action dropdown with "Registrar Recebimento", enabled only for PENDING/OVERDUE) and `transactions-view.tsx` (orchestrator state + API handler + toast)
+- Seed script `scripts/seed-ar-transactions.ts` for generating 50 fake transactions (10 OVERDUE + 40 PENDING)
+
+**Mistakes caught — avoid next time:**
+1. **`parseCurrency` didn't strip `R$` prefix**: The dialog pre-fills the amount as `R$ 1.234,56` (formatted). When submitted, `parseCurrency("R$ 1.234,56")` kept the `R$`, producing `Number("R$ 1234.56")` → `NaN` → "Valor recebido inválido". Fix: added `.replace(/[R$\s\u00A0]/g, "")` as the first step in `parseCurrency`. This is a shared utility — the fix benefits all callers, not just receipts.
+
+**Patterns established:**
+- AR receipt follows the same `registeringTxId` orchestrator state pattern as `payingPayableId` in AP
+- `requestSchema = receiptFormSchema.extend({ transactionId })` — extend existing form schema inline for API-specific fields
+- Live divergence preview via `useMemo` watching the form's `receivedAmount` field — no extra state needed
+- `prisma.$transaction()` for atomic multi-table writes: receipt + status update + audit log
