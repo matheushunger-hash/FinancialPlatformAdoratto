@@ -53,23 +53,23 @@ export async function GET(
     const scope = { supplierId: id, tenantId: ctx.tenantId };
 
     const [totalPaid, openPayables, overduePayables] = await Promise.all([
-      // Total Pago — all PAID payables for this supplier
+      // Total Pago — actionStatus = PAID
       prisma.payable.aggregate({
-        where: { ...scope, status: "PAID" },
+        where: { ...scope, actionStatus: "PAID" },
         _sum: { payValue: true },
         _count: true,
       }),
-      // Títulos Abertos — PENDING or APPROVED
+      // Títulos Abertos — actionStatus IS NULL or APPROVED
       prisma.payable.aggregate({
-        where: { ...scope, status: { in: ["PENDING", "APPROVED"] } },
+        where: { ...scope, OR: [{ actionStatus: null }, { actionStatus: "APPROVED" }] },
         _sum: { payValue: true },
         _count: true,
       }),
-      // Títulos Vencidos — active statuses with dueDate in the past
+      // Títulos Vencidos — actionStatus IS NULL AND dueDate < today
       prisma.payable.aggregate({
         where: {
           ...scope,
-          status: { in: ["PENDING", "APPROVED"] },
+          actionStatus: null,
           dueDate: { lt: today },
         },
         _sum: { payValue: true },
@@ -148,7 +148,7 @@ export async function PATCH(
         const openPayables = await prisma.payable.count({
           where: {
             supplierId: id,
-            status: { in: ["PENDING", "OVERDUE"] },
+            OR: [{ actionStatus: null }, { actionStatus: "APPROVED" }],
           },
         });
 

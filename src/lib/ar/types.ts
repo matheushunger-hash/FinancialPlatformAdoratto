@@ -170,3 +170,27 @@ export const TRANSACTION_STATUS_CONFIG: Record<
   OVERDUE: { label: "Vencido", variant: "destructive" },
   CANCELLED: { label: "Cancelado", variant: "secondary" },
 };
+
+// --- Receivable Calendar types (#74) ---
+
+export interface CalendarDayBrand {
+  brand: string;
+  netAmount: string;
+  count: number;
+}
+
+export interface CalendarDay {
+  date: string;              // yyyy-MM-dd
+  totalAmount: string;       // net total (all non-cancelled)
+  pendingAmount: string;     // PENDING only
+  confirmedAmount: string;   // CONFIRMED + DIVERGENT
+  overdueAmount: string;     // OVERDUE only
+  transactionCount: number;
+  byBrand: CalendarDayBrand[];
+}
+
+export interface CalendarResponse {
+  days: CalendarDay[];
+  from: string;
+  to: string;
+}

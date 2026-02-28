@@ -29,18 +29,19 @@ import {
 import { cn } from "@/lib/utils";
 
 // =============================================================================
-// ForceStatusDialog — ADMIN override to set any status on a payable
+// ForceStatusDialog — ADMIN override to set any actionStatus on a payable
 // =============================================================================
 // Opens when "Alterar Status" is clicked in the dropdown. The admin picks
-// a target status from a select. If PAID is chosen, a date picker appears.
+// a target actionStatus from a select. If PAID is chosen, a date picker appears.
+// "NULL" clears the actionStatus, returning the payable to temporal display status.
 // =============================================================================
 
 const STATUS_OPTIONS = [
-  { value: "PENDING", label: "Pendente" },
+  { value: "NULL", label: "Sem Ação (temporal)" },
   { value: "APPROVED", label: "Aprovado" },
-  { value: "REJECTED", label: "Rejeitado" },
+  { value: "HELD", label: "Segurado" },
   { value: "PAID", label: "Pago" },
-  { value: "OVERDUE", label: "Vencido" },
+  { value: "PROTESTED", label: "Protestado" },
   { value: "CANCELLED", label: "Cancelado" },
 ] as const;
 
@@ -60,8 +61,9 @@ export function ForceStatusDialog({
   const [targetStatus, setTargetStatus] = useState<string>("");
   const [paidAtDate, setPaidAtDate] = useState<Date>(new Date());
 
-  // Filter out the current status so admin only sees valid targets
-  const normalizedCurrent = currentStatus.toUpperCase();
+  // Filter out the current actionStatus so admin only sees valid targets
+  // Empty string or null maps to "NULL" (temporal)
+  const normalizedCurrent = currentStatus ? currentStatus.toUpperCase() : "NULL";
   const availableOptions = STATUS_OPTIONS.filter(
     (opt) => opt.value !== normalizedCurrent,
   );
@@ -79,6 +81,7 @@ export function ForceStatusDialog({
     if (targetStatus === "PAID") {
       onConfirm(targetStatus, format(paidAtDate, "yyyy-MM-dd"));
     } else {
+      // "NULL" tells the API to clear actionStatus (return to temporal)
       onConfirm(targetStatus);
     }
   }

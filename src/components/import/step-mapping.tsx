@@ -259,6 +259,8 @@ export function StepMapping({
                   <SelectItem value="CARTAO">Cartão</SelectItem>
                   <SelectItem value="DINHEIRO">Dinheiro</SelectItem>
                   <SelectItem value="CHEQUE">Cheque</SelectItem>
+                  <SelectItem value="TAX_SLIP">Guia Tributária</SelectItem>
+                  <SelectItem value="PAYROLL">Folha de Pagamento</SelectItem>
                 </SelectContent>
               </Select>
             </div>

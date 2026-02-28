@@ -167,7 +167,7 @@ const HEADER_PATTERNS: { field: TargetFieldKey; patterns: RegExp[] }[] = [
   },
   {
     field: "dueDate",
-    patterns: [/vencimento/i, /data\s*venc/i, /due\s*date/i, /venc/i],
+    patterns: [/vencimento/i, /data\s*venc/i, /due\s*date/i, /venc(?!id)/i],
   },
   {
     field: "issueDate",
@@ -179,7 +179,7 @@ const HEADER_PATTERNS: { field: TargetFieldKey; patterns: RegExp[] }[] = [
   },
   {
     field: "category",
-    patterns: [/categoria/i, /category/i, /tipo/i],
+    patterns: [/categoria/i, /category/i, /tipo/i, /^conta$/i],
   },
   {
     field: "paymentMethod",
@@ -191,7 +191,7 @@ const HEADER_PATTERNS: { field: TargetFieldKey; patterns: RegExp[] }[] = [
   },
   {
     field: "notes",
-    patterns: [/observa[çc]/i, /notas?/i, /notes?/i, /obs/i],
+    patterns: [/observa[çc]/i, /oberva/i, /notas?/i, /notes?/i, /obs/i],
   },
   {
     field: "tags",

@@ -1,9 +1,12 @@
 /**
- * fix-segurado-dates.ts
+ * fix-segurado-dates.ts (ALREADY EXECUTED)
  * ---------------------------------------------------------------------------
  * Reads the spreadsheet and finds rows with "segurado DD/MM" in the Obs
  * column. For each, it updates the payable's dueDate from the original
  * spreadsheet date to the segurado (actual expiry) date.
+ *
+ * Post-migration note: `status` field was removed from the schema in Phase 7
+ * of the status model refactor. Updated to use `actionStatus` instead.
  *
  * Usage:
  *   npx tsx scripts/fix-segurado-dates.ts           # dry-run (show changes)
@@ -155,7 +158,7 @@ async function main() {
     payValue: number;
     oldDueDate: string;
     newDueDate: string;
-    status: string;
+    actionStatus: string | null;
   }> = [];
 
   for (const { row, seguradoDate, originalDueDate } of seguradoRows) {
@@ -183,7 +186,7 @@ async function main() {
         payValue: payValue,
         dueDate: { gte: dueDateStart, lte: dueDateEnd },
       },
-      select: { id: true, status: true, dueDate: true, payValue: true },
+      select: { id: true, actionStatus: true, dueDate: true, payValue: true },
     });
 
     if (candidates.length === 0) {
@@ -212,7 +215,7 @@ async function main() {
         payValue: Number(payable.payValue),
         oldDueDate: currentDue,
         newDueDate: seguradoDate,
-        status: payable.status,
+        actionStatus: payable.actionStatus,
       });
     }
   }
@@ -236,7 +239,7 @@ async function main() {
   console.log(`=== UPDATES (${updates.length} total, showing first 30) ===`);
   for (const u of updates.slice(0, 30)) {
     console.log(
-      `  ${u.supplierName.substring(0, 35).padEnd(35)} | R$${String(u.payValue).padStart(10)} | ${u.oldDueDate} → ${u.newDueDate} | ${u.status}`,
+      `  ${u.supplierName.substring(0, 35).padEnd(35)} | R$${String(u.payValue).padStart(10)} | ${u.oldDueDate} → ${u.newDueDate} | ${u.actionStatus ?? "temporal"}`,
     );
   }
   if (updates.length > 30) {
@@ -246,11 +249,12 @@ async function main() {
   // Show breakdown by status
   const byStatus = new Map<string, number>();
   for (const u of updates) {
-    byStatus.set(u.status, (byStatus.get(u.status) ?? 0) + 1);
+    const key = u.actionStatus ?? "temporal";
+    byStatus.set(key, (byStatus.get(key) ?? 0) + 1);
   }
-  console.log("\n  By status:");
-  for (const [status, count] of byStatus) {
-    console.log(`    ${status}: ${count}`);
+  console.log("\n  By actionStatus:");
+  for (const [actionStatus, count] of byStatus) {
+    console.log(`    ${actionStatus}: ${count}`);
   }
 
   // Step 6: Apply if not dry run

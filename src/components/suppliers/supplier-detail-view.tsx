@@ -75,7 +75,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
   const [forceStatusPayableId, setForceStatusPayableId] = useState<string | null>(null);
   const [deletingPayableId, setDeletingPayableId] = useState<string | null>(null);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  const [batchAction, setBatchAction] = useState<"approve" | "pay" | null>(null);
+  const [batchAction, setBatchAction] = useState<"approve" | "hold" | "pay" | null>(null);
   const [sort, setSort] = useState("dueDate");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [filters, setFilters] = useState<PayableFilters>({});
@@ -123,8 +123,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
         supplierId,
       });
       if (debouncedSearch) params.set("search", debouncedSearch);
-      if (filters.status) params.set("status", filters.status);
-      if (filters.tag) params.set("tag", filters.tag);
+      if (filters.displayStatus) params.set("displayStatus", filters.displayStatus);
       if (filters.category) params.set("category", filters.category);
       if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
       if (filters.dueDateFrom) params.set("dueDateFrom", filters.dueDateFrom);
@@ -257,7 +256,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
   }
 
   const forceStatusCurrentStatus = forceStatusPayableId
-    ? payables.find((p) => p.id === forceStatusPayableId)?.status ?? ""
+    ? payables.find((p) => p.id === forceStatusPayableId)?.actionStatus ?? ""
     : "";
 
   // --- Batch actions ---
@@ -272,13 +271,14 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
     return selectedPayables.reduce((sum, p) => sum + Number(p.payValue), 0);
   }, [selectedPayables]);
 
-  const eligibleForApprove = selectedPayables.filter((p) => p.status === "PENDING");
+  // actionStatus === null means no action taken (temporal — eligible for approve/hold)
+  const eligibleForApprove = selectedPayables.filter((p) => p.actionStatus === null);
   const eligibleForPay = selectedPayables.filter(
-    (p) => p.status === "PENDING" || p.status === "APPROVED",
+    (p) => p.actionStatus === null || p.actionStatus === "APPROVED",
   );
 
   async function handleBatchTransition(action: string, paidAt?: string) {
-    const eligible = action === "approve" ? eligibleForApprove : eligibleForPay;
+    const eligible = action === "approve" || action === "hold" ? eligibleForApprove : eligibleForPay;
     const ids = eligible.map((p) => p.id);
     if (ids.length === 0) return;
 
@@ -431,6 +431,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
         selectedPayables={selectedPayables}
         userRole={userRole}
         onApprove={() => setBatchAction("approve")}
+        onHold={() => setBatchAction("hold")}
         onPay={() => setBatchAction("pay")}
         onExport={handleBatchExportCSV}
         onClear={() => setRowSelection({})}
@@ -448,7 +449,7 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
             <AlertDialogTitle>Aprovar títulos em lote</AlertDialogTitle>
             <AlertDialogDescription>
               {eligibleForApprove.length} de {selectedPayables.length}{" "}
-              selecionado(s) podem ser aprovados (status Pendente).
+              selecionado(s) podem ser aprovados (sem ação aplicada).
               {eligibleForApprove.length > 0 && (
                 <>
                   {" "}
@@ -473,6 +474,48 @@ export function SupplierDetailView({ supplierId, userRole }: SupplierDetailViewP
               disabled={eligibleForApprove.length === 0}
             >
               Aprovar {eligibleForApprove.length} título(s)
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Batch hold confirmation */}
+      <AlertDialog
+        open={batchAction === "hold"}
+        onOpenChange={(open) => {
+          if (!open) setBatchAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Segurar títulos em lote</AlertDialogTitle>
+            <AlertDialogDescription>
+              {eligibleForApprove.length} de {selectedPayables.length}{" "}
+              selecionado(s) podem ser segurados (sem ação aplicada).
+              {eligibleForApprove.length > 0 && (
+                <>
+                  {" "}
+                  Total: R${" "}
+                  {eligibleForApprove
+                    .reduce((s, p) => s + Number(p.payValue), 0)
+                    .toLocaleString("pt-BR", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                handleBatchTransition("hold");
+                setBatchAction(null);
+              }}
+              disabled={eligibleForApprove.length === 0}
+            >
+              Segurar {eligibleForApprove.length} título(s)
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

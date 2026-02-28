@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { startOfWeek, endOfWeek, addWeeks } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
+import { computeDisplayStatus } from "@/lib/payables/status";
+import type { DisplayStatus } from "@/lib/payables/status";
 import type {
   DashboardResponse,
   DailyPaymentData,
@@ -13,25 +15,20 @@ import type {
 // =============================================================================
 // GET /api/dashboard — Financial KPI aggregations + chart data
 // =============================================================================
-// Returns 6 KPI cards (with deltas + sparklines for period-filtered KPIs)
-// and 3 chart datasets for the dashboard.
-// All queries are scoped by tenantId.
-//
-// Query params:
-//   from (ISO date, e.g. "2026-02-01") — defaults to 1st of current month
-//   to   (ISO date, e.g. "2026-02-28") — defaults to last day of current month
+// All queries now use actionStatus instead of the old status enum.
+//   "active" = actionStatus IS NULL (temporal) or APPROVED
+//   "overdue" = actionStatus IS NULL AND dueDate < today
+//   "paid" = actionStatus = PAID
+//   "held" = actionStatus = HELD
 // =============================================================================
 
-// Budget utilization thresholds: green < 80%, yellow 80-95%, red > 95%
 const BUDGET_THRESHOLDS = { green: 0.80, yellow: 0.95 };
 
-// Compute % change between current and previous values
 function computeDelta(current: number, previous: number): number {
   if (previous === 0) return current > 0 ? 100 : 0;
   return Math.round(((current - previous) / previous) * 100);
 }
 
-// Build a sparkline array from a Map of day → value, filling zero for missing days
 function buildSparkline(
   byDay: Map<string, number>,
   rangeStart: Date,
@@ -47,7 +44,6 @@ function buildSparkline(
   return values;
 }
 
-// Determine urgency tier for a weekly bucket based on overdue ratio and aging
 function computeUrgencyTier(w: { overdueValue: number; totalValue: number; maxDaysOverdue: number }): UrgencyTier {
   if (w.overdueValue === 0) return "green";
   const ratio = w.totalValue > 0 ? w.overdueValue / w.totalValue : 0;
@@ -56,13 +52,25 @@ function computeUrgencyTier(w: { overdueValue: number; totalValue: number; maxDa
   return "yellow";
 }
 
+// "Active" means: no action taken (temporal) or approved — still needs to be paid
+const ACTIVE_WHERE = {
+  OR: [
+    { actionStatus: null },
+    { actionStatus: "APPROVED" as const },
+  ],
+};
+
+// Exclude cancelled payables from all dashboard queries
+const NOT_CANCELLED = {
+  actionStatus: { not: "CANCELLED" as const },
+};
+
 export async function GET(request: NextRequest) {
   const ctx = await getAuthContext();
   if (!ctx) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Parse from/to from query params, defaulting to current month boundaries
   const { searchParams } = new URL(request.url);
   const now = new Date();
   const defaultFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
@@ -72,40 +80,30 @@ export async function GET(request: NextRequest) {
   const fromParam = searchParams.get("from") || defaultFrom;
   const toParam = searchParams.get("to") || defaultTo;
 
-  // Build date boundaries — explicit UTC (Z suffix) so server timezone doesn't shift dates
   const rangeStart = new Date(fromParam + "T00:00:00.000Z");
   const rangeEnd = new Date(toParam + "T23:59:59.999Z");
 
-  // Previous equivalent period: same duration, immediately before selected range
-  // e.g., Feb 1–28 (28 days) → Jan 4–31 (28 days)
   const periodMs = rangeEnd.getTime() - rangeStart.getTime();
   const prevRangeEnd = new Date(rangeStart.getTime() - 1);
   prevRangeEnd.setUTCHours(23, 59, 59, 999);
   const prevRangeStart = new Date(rangeStart.getTime() - periodMs - 86400000);
   prevRangeStart.setUTCHours(0, 0, 0, 0);
 
-  // "today" at midnight local time — used for overdue/due-soon comparisons
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // 7 days from now (end of day) — upper bound for "due soon"
   const sevenDaysFromNow = new Date(today);
   sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
   sevenDaysFromNow.setHours(23, 59, 59, 999);
 
-  // Weekly calendar: Sat–Fri weeks (#84)
   const currentWeekStart = startOfWeek(today, { weekStartsOn: 6 });
   const currentWeekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 6 });
   const lastWeekEnd = endOfWeek(addWeeks(currentWeekStart, 4), { weekStartsOn: 6 });
 
-  // Common filter: only this tenant, only active statuses (not yet paid/cancelled)
-  const activeStatuses = ["PENDING", "APPROVED"] as const;
   const tenantScope = { tenantId: ctx.tenantId };
 
   try {
-    // Split queries into two batches to stay within pool connection limits.
-    // Batch 1: core KPIs + chart data (10 queries)
-    // Batch 2: deltas, sparklines, budget gauge, weekly calendar (8 queries)
+    // Batch 1: core KPIs + chart data
     const [
       totalPayable,
       overdue,
@@ -113,48 +111,44 @@ export async function GET(request: NextRequest) {
       paidThisMonth,
       plannedThisMonth,
       dailyRaw,
-      statusRaw,
       topSuppliersRaw,
       dueInPeriod,
       insuredInPeriod,
     ] = await Promise.all([
-      // 1. Total a Pagar — all PENDING + APPROVED payables
+      // 1. Total a Pagar — actionStatus IS NULL OR APPROVED
       prisma.payable.aggregate({
-        where: {
-          ...tenantScope,
-          status: { in: [...activeStatuses] },
-        },
+        where: { ...tenantScope, ...ACTIVE_WHERE },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 2. Vencidos — dueDate < today AND still PENDING/APPROVED
+      // 2. Vencidos — actionStatus IS NULL AND dueDate < today
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          actionStatus: null,
           dueDate: { lt: today },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 3. A Vencer 7 dias — dueDate between today and today+7, still active
+      // 3. A Vencer 7 dias — actionStatus IS NULL AND dueDate between today and +7d
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          actionStatus: null,
           dueDate: { gte: today, lte: sevenDaysFromNow },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 4. Pagos no Período — status PAID, paidAt within the selected range
+      // 4. Pagos no Período — actionStatus = PAID, paidAt in range
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: "PAID",
+          actionStatus: "PAID",
           paidAt: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
@@ -165,37 +159,29 @@ export async function GET(request: NextRequest) {
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
+          ...NOT_CANCELLED,
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
       }),
 
-      // 6. Daily payments — grouped by dueDate + status for stacked bar chart
+      // 6. Daily payments — grouped by dueDate + actionStatus for stacked bar
       prisma.payable.groupBy({
-        by: ["dueDate", "status"],
+        by: ["dueDate", "actionStatus"],
         where: {
           ...tenantScope,
+          ...NOT_CANCELLED,
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
       }),
 
-      // 7. Status distribution — count + R$ value per status (donut chart)
-      prisma.payable.groupBy({
-        by: ["status"],
-        where: {
-          ...tenantScope,
-          dueDate: { gte: rangeStart, lte: rangeEnd },
-        },
-        _count: true,
-        _sum: { payValue: true },
-      }),
-
-      // 8. Top 10 suppliers by payValue (horizontal bar chart + mini-table)
+      // 7. Top 10 suppliers by payValue
       prisma.payable.groupBy({
         by: ["supplierId"],
         where: {
           ...tenantScope,
+          ...NOT_CANCELLED,
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
@@ -204,22 +190,22 @@ export async function GET(request: NextRequest) {
         take: 10,
       }),
 
-      // 9. A Vencer no Período — active payables (PENDING/APPROVED) due in the range
+      // 8. A Vencer no Período — active payables due in range
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          ...ACTIVE_WHERE,
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 10. Segurado no Período — payables tagged "segurado" due in the range
+      // 9. Segurado no Período — actionStatus = HELD, due in range
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          tags: { has: "segurado" },
+          actionStatus: "HELD",
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
@@ -227,7 +213,7 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // Batch 2: deltas, sparklines, budget gauge, weekly calendar, weekly top suppliers
+    // Batch 2: deltas, sparklines, budget, weekly calendar
     const [
       prevPaid,
       prevDueInPeriod,
@@ -243,130 +229,129 @@ export async function GET(request: NextRequest) {
       weeklyTopSuppliersRaw,
       weeklyGrandTotalRaw,
     ] = await Promise.all([
-      // 11. Previous period — paid (for delta comparison)
+      // 11. Previous period — paid
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: "PAID",
+          actionStatus: "PAID",
           paidAt: { gte: prevRangeStart, lte: prevRangeEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 12. Previous period — dueInPeriod (for delta comparison)
+      // 12. Previous period — dueInPeriod
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          ...ACTIVE_WHERE,
           dueDate: { gte: prevRangeStart, lte: prevRangeEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 13. Previous period — insuredInPeriod (for delta comparison)
+      // 13. Previous period — insured
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          tags: { has: "segurado" },
+          actionStatus: "HELD",
           dueDate: { gte: prevRangeStart, lte: prevRangeEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 14. Sparkline — daily paid amounts (findMany because paidAt is DateTime)
+      // 14. Sparkline — daily paid amounts
       prisma.payable.findMany({
         where: {
           ...tenantScope,
-          status: "PAID",
+          actionStatus: "PAID",
           paidAt: { gte: rangeStart, lte: rangeEnd },
         },
         select: { paidAt: true, payValue: true },
       }),
 
-      // 15. Sparkline — daily insured amounts
+      // 15. Sparkline — daily held amounts
       prisma.payable.groupBy({
         by: ["dueDate"],
         where: {
           ...tenantScope,
-          tags: { has: "segurado" },
+          actionStatus: "HELD",
           dueDate: { gte: rangeStart, lte: rangeEnd },
         },
         _sum: { payValue: true },
       }),
 
-      // 16a. Active non-overdue payables due this week — today → Friday (#84, #91)
+      // 16a. Active non-overdue payables due this week
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          actionStatus: null,
           dueDate: { gte: today, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 16b. Overdue active payables due this week — Saturday → yesterday (#91)
+      // 16b. Overdue active payables due this week
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          actionStatus: null,
           dueDate: { gte: currentWeekStart, lt: today },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 16c. Paid payables due this week — already consumed budget
+      // 16c. Paid payables due this week
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: "PAID",
+          actionStatus: "PAID",
           dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 17a. Active payables grouped by dueDate — for weekly calendar (#84)
-      // Includes both PENDING and APPROVED so we can classify overdue vs pending
+      // 17a. Active payables grouped by dueDate — weekly calendar
       prisma.payable.groupBy({
         by: ["dueDate"],
         where: {
           ...tenantScope,
-          status: { in: [...activeStatuses] },
+          actionStatus: null,
           dueDate: { gte: currentWeekStart, lte: lastWeekEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 17b. Paid payables grouped by dueDate — for weekly calendar paid segment
+      // 17b. Paid payables grouped by dueDate — weekly calendar
       prisma.payable.groupBy({
         by: ["dueDate"],
         where: {
           ...tenantScope,
-          status: "PAID",
+          actionStatus: "PAID",
           dueDate: { gte: currentWeekStart, lte: lastWeekEnd },
         },
         _sum: { payValue: true },
         _count: true,
       }),
 
-      // 18. Tenant spending limit (#84)
+      // 18. Tenant spending limit
       prisma.tenantSettings.findUnique({
         where: { tenantId: ctx.tenantId },
         select: { buyerSpendingLimit: true },
       }),
 
-      // 19. Top 10 suppliers by payValue in current week — all statuses that consume budget
+      // 19. Top 10 suppliers in current week (all non-cancelled)
       prisma.payable.groupBy({
         by: ["supplierId"],
         where: {
           ...tenantScope,
-          status: { in: ["PENDING", "APPROVED", "PAID"] },
+          ...NOT_CANCELLED,
           dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
@@ -375,57 +360,74 @@ export async function GET(request: NextRequest) {
         take: 10,
       }),
 
-      // 20. Grand total payValue in current week — all budget-consuming statuses
+      // 20. Grand total payValue in current week
       prisma.payable.aggregate({
         where: {
           ...tenantScope,
-          status: { in: ["PENDING", "APPROVED", "PAID"] },
+          OR: [
+            { actionStatus: null },
+            { actionStatus: "APPROVED" },
+            { actionStatus: "PAID" },
+          ],
           dueDate: { gte: currentWeekStart, lte: currentWeekEnd },
         },
         _sum: { payValue: true },
       }),
     ]);
 
-    // Calculate percentage: paid / planned * 100
     const paidSum = Number(paidThisMonth._sum.payValue ?? 0);
     const plannedSum = Number(plannedThisMonth._sum.payValue ?? 0);
     const percentOfPlan =
       plannedSum > 0 ? Math.round((paidSum / plannedSum) * 100) : 0;
 
-    // ---- Pivot daily payments into one object per day ----
-    const ALL_STATUSES = [
-      "PENDING",
-      "APPROVED",
-      "PAID",
-      "OVERDUE",
-      "REJECTED",
-      "CANCELLED",
-    ] as const;
+    // ---- Pivot daily payments by display status ----
+    const ALL_DISPLAY_STATUSES: DisplayStatus[] = [
+      "A_VENCER", "VENCE_HOJE", "VENCIDO", "APROVADO", "SEGURADO", "PAGO", "PROTESTADO", "CANCELADO",
+    ];
 
     const dayMap = new Map<string, DailyPaymentData>();
     for (const row of dailyRaw) {
-      // dueDate is @db.Date — extract ISO date string for cross-month support
       const date = row.dueDate.toISOString().split("T")[0];
       if (!dayMap.has(date)) {
         const empty = { date } as DailyPaymentData;
-        for (const s of ALL_STATUSES) empty[s] = 0;
+        for (const s of ALL_DISPLAY_STATUSES) empty[s] = 0;
         dayMap.set(date, empty);
       }
       const entry = dayMap.get(date)!;
-      entry[row.status] = Number(row._sum.payValue ?? 0);
+      // Compute display status for this group
+      const ds = computeDisplayStatus(row.actionStatus, row.dueDate);
+      entry[ds] += Number(row._sum.payValue ?? 0);
     }
     const dailyPayments = Array.from(dayMap.values()).sort(
       (a, b) => a.date.localeCompare(b.date),
     );
 
-    // ---- Status distribution ----
-    const statusDistribution = statusRaw.map((row) => ({
-      status: row.status,
-      count: row._count,
-      value: Number(row._sum.payValue ?? 0),
+    // ---- Status distribution (donut) — group by display status ----
+    // We need to fetch raw payables in the range to compute display status
+    const distributionRaw = await prisma.payable.findMany({
+      where: {
+        ...tenantScope,
+        ...NOT_CANCELLED,
+        dueDate: { gte: rangeStart, lte: rangeEnd },
+      },
+      select: { actionStatus: true, dueDate: true, payValue: true },
+    });
+
+    const distMap = new Map<DisplayStatus, { count: number; value: number }>();
+    for (const p of distributionRaw) {
+      const ds = computeDisplayStatus(p.actionStatus, p.dueDate);
+      const existing = distMap.get(ds) ?? { count: 0, value: 0 };
+      existing.count++;
+      existing.value += Number(p.payValue ?? 0);
+      distMap.set(ds, existing);
+    }
+    const statusDistribution = Array.from(distMap.entries()).map(([status, data]) => ({
+      status,
+      count: data.count,
+      value: Math.round(data.value * 100) / 100,
     }));
 
-    // ---- Top 10 suppliers — resolve names from IDs ----
+    // ---- Top 10 suppliers ----
     const supplierIds = topSuppliersRaw
       .map((row) => row.supplierId)
       .filter(Boolean) as string[];
@@ -438,15 +440,13 @@ export async function GET(request: NextRequest) {
         : [];
     const nameMap = new Map(suppliers.map((s) => [s.id, s.name]));
 
-    // Overdue breakdown per top 10 supplier — scoped to same period as totals
-    // Uses AND to combine period range (gte+lte) with overdue condition (lt today)
     const overdueBySupplier = supplierIds.length > 0
       ? await prisma.payable.groupBy({
           by: ["supplierId"],
           where: {
             ...tenantScope,
             supplierId: { in: supplierIds },
-            status: { in: [...activeStatuses] },
+            actionStatus: null,
             AND: [
               { dueDate: { gte: rangeStart, lte: rangeEnd } },
               { dueDate: { lt: today } },
@@ -466,14 +466,13 @@ export async function GET(request: NextRequest) {
       ]),
     );
 
-    // Paid breakdown per top 10 supplier
     const paidBySupplier = supplierIds.length > 0
       ? await prisma.payable.groupBy({
           by: ["supplierId"],
           where: {
             ...tenantScope,
             supplierId: { in: supplierIds },
-            status: "PAID",
+            actionStatus: "PAID",
             dueDate: { gte: rangeStart, lte: rangeEnd },
           },
           _sum: { payValue: true },
@@ -483,12 +482,14 @@ export async function GET(request: NextRequest) {
       paidBySupplier.map((r) => [r.supplierId, Number(r._sum.payValue ?? 0)]),
     );
 
+    const todayMs = today.getTime();
+
     const topSuppliers = topSuppliersRaw.map((row) => {
       const od = overdueMap.get(row.supplierId) ?? { overdueTotal: 0, minDueDate: null };
       const total = Number(row._sum.payValue ?? 0);
       const paidTotal = paidMap.get(row.supplierId) ?? 0;
       const maxDaysOverdue = od.minDueDate
-        ? Math.floor((today.getTime() - od.minDueDate.getTime()) / 86_400_000)
+        ? Math.floor((todayMs - od.minDueDate.getTime()) / 86_400_000)
         : 0;
       return {
         supplierId: row.supplierId,
@@ -508,9 +509,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // ---- Build sparklines ----
-
-    // Sparkline for paidThisMonth: group findMany results by paidAt date
+    // ---- Sparklines ----
     const paidByDay = new Map<string, number>();
     for (const row of paidSparklineRaw) {
       if (!row.paidAt) continue;
@@ -519,10 +518,9 @@ export async function GET(request: NextRequest) {
     }
     const paidSparkline = buildSparkline(paidByDay, rangeStart, rangeEnd);
 
-    // Sparkline for dueInPeriod: sum PENDING + APPROVED per day from dailyPayments
-    const dueSparkline = dailyPayments.map((d) => d.PENDING + d.APPROVED);
+    // Sparkline for dueInPeriod: sum temporal statuses per day
+    const dueSparkline = dailyPayments.map((d) => d.A_VENCER + d.VENCE_HOJE + d.VENCIDO + d.APROVADO);
 
-    // Sparkline for insuredInPeriod: from groupBy results
     const insuredByDay = new Map<string, number>();
     for (const row of insuredSparklineRaw) {
       const day = row.dueDate.toISOString().split("T")[0];
@@ -530,7 +528,7 @@ export async function GET(request: NextRequest) {
     }
     const insuredSparkline = buildSparkline(insuredByDay, rangeStart, rangeEnd);
 
-    // ---- Compute deltas ----
+    // ---- Deltas ----
     const dueInPeriodValue = Number(dueInPeriod._sum.payValue ?? 0);
     const insuredInPeriodValue = Number(insuredInPeriod._sum.payValue ?? 0);
 
@@ -538,17 +536,16 @@ export async function GET(request: NextRequest) {
     const dueDelta = computeDelta(dueInPeriodValue, Number(prevDueInPeriod._sum.payValue ?? 0));
     const insuredDelta = computeDelta(insuredInPeriodValue, Number(prevInsured._sum.payValue ?? 0));
 
-    // ---- Aging overview (computed from overdue payables) ----
+    // ---- Aging overview ----
     const overduePayables = await prisma.payable.findMany({
       where: {
         ...tenantScope,
-        status: { in: [...activeStatuses] },
+        actionStatus: null,
         dueDate: { lt: today },
       },
       select: { dueDate: true, payValue: true, jurosMulta: true },
     });
 
-    const todayMs = today.getTime();
     let totalAgingDays = 0;
     let interestExposure = 0;
     let criticalCount = 0;
@@ -577,21 +574,18 @@ export async function GET(request: NextRequest) {
         ? Math.round(totalAgingDays / overduePayables.length)
         : 0;
 
-    // ---- Buyer budget gauge (#84, #91, refactor: include paid in total) ----
+    // ---- Buyer budget gauge ----
     const pendingOpen = Number(budgetPendingRaw._sum.payValue ?? 0);
     const overdueOpen = Number(budgetOverdueRaw._sum.payValue ?? 0);
     const paidInWeek = Number(budgetPaidRaw._sum.payValue ?? 0);
-    // totalOpen = pending + overdue + paid (full budget consumption this week)
     const totalOpen = pendingOpen + overdueOpen + paidInWeek;
     const limit = Number(tenantSettings?.buyerSpendingLimit ?? 350000);
     const utilization = limit > 0 ? totalOpen / limit : 0;
 
-    // Build current week label for the gauge header
     const cwsStr = currentWeekStart.toISOString().split("T")[0];
     const cweStr = currentWeekEnd.toISOString().split("T")[0];
     const weekLabel = `${cwsStr.slice(8, 10)}/${cwsStr.slice(5, 7)} – ${cweStr.slice(8, 10)}/${cweStr.slice(5, 7)}`;
 
-    // Status: pure utilization-based tiers (overdue no longer forces yellow)
     const rawStatus: "green" | "yellow" | "red" =
       utilization >= BUDGET_THRESHOLDS.yellow ? "red" :
       utilization >= BUDGET_THRESHOLDS.green ? "yellow" : "green";
@@ -612,7 +606,7 @@ export async function GET(request: NextRequest) {
       weekEnd: cweStr,
     };
 
-    // ---- Weekly calendar bucketing (#84) ----
+    // ---- Weekly calendar ----
     const weeklyCalendar: WeeklyPaymentData[] = [];
     for (let i = 0; i < 5; i++) {
       const ws = addWeeks(currentWeekStart, i);
@@ -638,7 +632,6 @@ export async function GET(request: NextRequest) {
         maxDaysOverdue: 0,
       });
     }
-    // Bucket active (PENDING/APPROVED) payables into weeks
     for (const row of weeklyCalendarRaw) {
       const dateMs = row.dueDate.getTime();
       const bucket = weeklyCalendar.find(
@@ -660,7 +653,6 @@ export async function GET(request: NextRequest) {
         }
       }
     }
-    // Bucket PAID payables into weeks
     for (const row of weeklyPaidRaw) {
       const dateMs = row.dueDate.getTime();
       const bucket = weeklyCalendar.find(
@@ -673,18 +665,16 @@ export async function GET(request: NextRequest) {
         bucket.paidCount += row._count;
       }
     }
-    // Compute derived fields for each week bucket
     for (const bucket of weeklyCalendar) {
       bucket.totalValue = bucket.value + bucket.overdueValue + bucket.paidValue;
       bucket.totalCount = bucket.count + bucket.overdueCount + bucket.paidCount;
       bucket.urgencyTier = computeUrgencyTier(bucket);
     }
 
-    // ---- Weekly top suppliers — resolve names (#94) ----
+    // ---- Weekly top suppliers ----
     const weeklySupplierIds = weeklyTopSuppliersRaw
       .map((r) => r.supplierId)
       .filter(Boolean) as string[];
-    // Fetch names not already in nameMap (from period-filtered lookup)
     const missingIds = weeklySupplierIds.filter((id) => !nameMap.has(id));
     if (missingIds.length > 0) {
       const extra = await prisma.supplier.findMany({
@@ -773,8 +763,6 @@ export async function GET(request: NextRequest) {
       },
     };
 
-    // Cache dashboard data for 60s — data doesn't need to be real-time,
-    // and this eliminates repeat DB hits when refreshing the page.
     return NextResponse.json(response, {
       headers: {
         "Cache-Control": "private, max-age=60, stale-while-revalidate=120",

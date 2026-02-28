@@ -43,7 +43,7 @@ export interface ColumnMapping {
 
 export interface ImportDefaults {
   category: "REVENDA" | "DESPESA";
-  paymentMethod: "BOLETO" | "PIX" | "TRANSFERENCIA" | "CARTAO" | "DINHEIRO" | "CHEQUE";
+  paymentMethod: "BOLETO" | "PIX" | "TRANSFERENCIA" | "CARTAO" | "DINHEIRO" | "CHEQUE" | "TAX_SLIP" | "PAYROLL";
 }
 
 // --- Raw row: key-value pairs from the spreadsheet ---

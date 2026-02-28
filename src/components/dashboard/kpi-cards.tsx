@@ -49,7 +49,6 @@ const CARD_CONFIGS: CardConfig[] = [
     icon: DollarSign,
     buildFilter: (from, to) => ({
       title: "Total a Pagar",
-      status: "PENDING,APPROVED",
       dueDateFrom: from,
       dueDateTo: to,
     }),
@@ -61,7 +60,7 @@ const CARD_CONFIGS: CardConfig[] = [
       const today = toISODate(new Date());
       return {
         title: "Vencidos",
-        overdue: true,
+        displayStatus: "VENCIDO",
         dueDateFrom: "2020-01-01",
         dueDateTo: today,
       };
@@ -76,7 +75,7 @@ const CARD_CONFIGS: CardConfig[] = [
       const in7 = new Date(now.getTime() + 7 * 86_400_000);
       return {
         title: "A Vencer — Próximos 7 Dias",
-        status: "PENDING,APPROVED",
+        displayStatus: "A_VENCER",
         dueDateFrom: today,
         dueDateTo: toISODate(in7),
       };
@@ -87,7 +86,7 @@ const CARD_CONFIGS: CardConfig[] = [
     icon: CheckCircle,
     buildFilter: (from, to) => ({
       title: "Pagos no Período",
-      status: "PAID",
+      displayStatus: "PAGO",
       dueDateFrom: from,
       dueDateTo: to,
     }),
@@ -97,7 +96,6 @@ const CARD_CONFIGS: CardConfig[] = [
     icon: CalendarClock,
     buildFilter: (from, to) => ({
       title: "A Vencer no Período",
-      status: "PENDING,APPROVED",
       dueDateFrom: from,
       dueDateTo: to,
     }),
@@ -107,7 +105,7 @@ const CARD_CONFIGS: CardConfig[] = [
     icon: ShieldCheck,
     buildFilter: (from, to) => ({
       title: "Segurado no Período",
-      tag: "segurado",
+      displayStatus: "SEGURADO",
       dueDateFrom: from,
       dueDateTo: to,
     }),
