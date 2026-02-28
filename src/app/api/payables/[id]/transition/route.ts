@@ -82,6 +82,19 @@ export async function POST(
       );
     }
 
+    // Validate paidAt is not in the future
+    if (newActionStatus === "PAID") {
+      const paidDate = new Date(paidAt + "T12:00:00");
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      if (paidDate > endOfToday) {
+        return NextResponse.json(
+          { error: "Data de pagamento não pode ser no futuro" },
+          { status: 400 },
+        );
+      }
+    }
+
     // Build update data
     const updateData: Record<string, unknown> = {
       actionStatus: newActionStatus,
@@ -179,7 +192,16 @@ export async function POST(
         { status: 400 },
       );
     }
-    updateData.paidAt = new Date(paidAt + "T12:00:00");
+    const paidDate = new Date(paidAt + "T12:00:00");
+    const endOfToday = new Date();
+    endOfToday.setHours(23, 59, 59, 999);
+    if (paidDate > endOfToday) {
+      return NextResponse.json(
+        { error: "Data de pagamento não pode ser no futuro" },
+        { status: 400 },
+      );
+    }
+    updateData.paidAt = paidDate;
     updateData.markedPaidAt = new Date();
   }
 

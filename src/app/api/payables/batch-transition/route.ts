@@ -15,7 +15,7 @@ import type { ActionStatus } from "@prisma/client";
 
 const VALID_ACTIONS = new Set([
   "approve", "hold", "pay", "cancel", "protest",
-  "unapprove", "release", "reopen", "reverse",
+  "unapprove", "release", "reverse",
 ]);
 
 export async function POST(request: NextRequest) {
@@ -115,7 +115,14 @@ export async function POST(request: NextRequest) {
       }
 
       if (action === "pay") {
-        updateData.paidAt = new Date(paidAt + "T12:00:00");
+        const paidDate = new Date(paidAt + "T12:00:00");
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+        if (paidDate > endOfToday) {
+          failed.push({ id, error: "Data de pagamento não pode ser no futuro" });
+          continue;
+        }
+        updateData.paidAt = paidDate;
         updateData.markedPaidAt = new Date();
       }
 

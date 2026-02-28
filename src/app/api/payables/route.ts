@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAuthContext } from "@/lib/auth/context";
 import { payableFormSchema, parseCurrency } from "@/lib/payables/validation";
+import { computeDisplayStatus, buildWhereFromDisplayStatus } from "@/lib/payables/status";
+import type { DisplayStatus } from "@/lib/payables/status";
 import type { PayablesListResponse } from "@/lib/payables/types";
 
 // =============================================================================
 // GET /api/payables — List payables with pagination, sorting, and search
-// =============================================================================
-// Returns payables with supplier data joined in. Supports server-side sorting,
-// search across description/supplier name/invoice number, and pagination (25/page).
 // =============================================================================
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -18,25 +17,22 @@ type PrismaOrder = Record<string, unknown>;
 const SORT_MAP: Record<string, (order: "asc" | "desc") => PrismaOrder> = {
   supplierName: (order) => ({ supplier: { name: order } }),
   dueDate: (order) => ({ dueDate: order }),
+  scheduledDate: (order) => ({ scheduledDate: order }),
   amount: (order) => ({ amount: order }),
   payValue: (order) => ({ payValue: order }),
   jurosMulta: (order) => ({ jurosMulta: order }),
-  status: (order) => ({ status: order }),
-  // daysOverdue maps to dueDate with reversed direction:
-  // most overdue (highest days) = oldest due date = ASC
+  actionStatus: (order) => ({ actionStatus: order }),
+  // daysOverdue maps to dueDate with reversed direction
   daysOverdue: (order) => ({ dueDate: order === "asc" ? "desc" : "asc" }),
 };
 
-// Whitelist of valid filter values — unknown values are silently ignored
-const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED", "PAID", "OVERDUE", "CANCELLED"];
+// Whitelist of valid display statuses
+const VALID_DISPLAY_STATUSES = new Set<DisplayStatus>([
+  "A_VENCER", "VENCE_HOJE", "VENCIDO", "APROVADO", "SEGURADO", "PAGO", "PROTESTADO", "CANCELADO",
+]);
 const VALID_CATEGORIES = ["REVENDA", "DESPESA"];
 const VALID_METHODS = [
-  "BOLETO",
-  "PIX",
-  "TRANSFERENCIA",
-  "CARTAO",
-  "DINHEIRO",
-  "CHEQUE",
+  "BOLETO", "PIX", "TRANSFERENCIA", "CARTAO", "DINHEIRO", "CHEQUE", "TAX_SLIP", "PAYROLL",
 ];
 
 export async function GET(request: NextRequest) {
@@ -59,11 +55,10 @@ export async function GET(request: NextRequest) {
   const buildOrderBy = SORT_MAP[sortParam] ?? SORT_MAP.dueDate;
   const orderBy = buildOrderBy(orderParam);
 
-  // Build combined WHERE clause — each active filter pushes a condition.
-  // All conditions are ANDed: search "Acme" + status OVERDUE → both must match.
+  // Build combined WHERE clause
   const conditions: Record<string, unknown>[] = [];
 
-  // Search — expanded to include notes and supplier document (CNPJ/CPF)
+  // Search
   const searchTerm = searchParams.get("search")?.trim() || "";
   if (searchTerm) {
     conditions.push({
@@ -78,38 +73,40 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Filters — validated against whitelists, unknown values silently ignored
-  const statusParam = searchParams.get("status") || "";
-  const statuses = statusParam.split(",").filter(s => VALID_STATUSES.includes(s));
-  if (statuses.length === 1) {
-    conditions.push({ status: statuses[0] });
-  } else if (statuses.length > 1) {
-    conditions.push({ status: { in: statuses } });
+  // Display status filter — replaces old status + overdue filters
+  const displayStatusParam = searchParams.get("displayStatus") || "";
+  const displayStatuses = displayStatusParam
+    .split(",")
+    .filter((s): s is DisplayStatus => VALID_DISPLAY_STATUSES.has(s as DisplayStatus));
+
+  if (displayStatuses.length > 0) {
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const statusWhere = buildWhereFromDisplayStatus(displayStatuses, todayStr);
+    if (Object.keys(statusWhere).length > 0) {
+      conditions.push(statusWhere);
+    }
   }
 
-  const tagParam = searchParams.get("tag")?.trim() || "";
-  if (tagParam) {
-    conditions.push({ tags: { hasSome: [tagParam] } });
-  }
-
+  // Category filter
   const categoryParam = searchParams.get("category") || "";
   if (VALID_CATEGORIES.includes(categoryParam)) {
     conditions.push({ category: categoryParam });
   }
 
+  // Payment method filter
   const methodParam = searchParams.get("paymentMethod") || "";
   if (VALID_METHODS.includes(methodParam)) {
     conditions.push({ paymentMethod: methodParam });
   }
 
-  // Supplier filter — scope payables to a specific supplier (used by supplier detail page)
+  // Supplier filter
   const supplierIdParam = searchParams.get("supplierId") || "";
   if (supplierIdParam && UUID_REGEX.test(supplierIdParam)) {
     conditions.push({ supplierId: supplierIdParam });
   }
 
-  // Date range — use explicit UTC (Z suffix) so server timezone doesn't shift boundaries.
-  // Without Z, "T23:59:59" in UTC-3 becomes next day 02:59 UTC → includes one extra day.
+  // Date range
   const dueDateFrom = searchParams.get("dueDateFrom") || "";
   if (dueDateFrom) {
     conditions.push({ dueDate: { gte: new Date(dueDateFrom + "T00:00:00.000Z") } });
@@ -120,18 +117,7 @@ export async function GET(request: NextRequest) {
     conditions.push({ dueDate: { lte: new Date(dueDateTo + "T23:59:59.999Z") } });
   }
 
-  // Overdue compound filter — PENDING/APPROVED with past due date
-  const overdueParam = searchParams.get("overdue");
-  if (overdueParam === "true") {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    conditions.push({
-      status: { in: ["PENDING", "APPROVED"] },
-      dueDate: { lt: now },
-    });
-  }
-
-  // Scope every query to the tenant — everyone in the org sees the same payables
+  // Tenant isolation
   conditions.push({ tenantId: ctx.tenantId });
   const where = { AND: conditions };
 
@@ -153,36 +139,41 @@ export async function GET(request: NextRequest) {
     const todayForAging = new Date();
     todayForAging.setHours(0, 0, 0, 0);
     const todayMs = todayForAging.getTime();
-    const OVERDUE_STATUSES = ["PENDING", "APPROVED", "OVERDUE"];
 
     const response: PayablesListResponse = {
-      payables: payables.map((p) => ({
-        id: p.id,
-        supplierId: p.supplierId,
-        supplierName: p.supplier?.name ?? null,
-        supplierDocument: p.supplier?.document ?? null,
-        supplierDocumentType: (p.supplier?.documentType as "CNPJ" | "CPF") ?? null,
-        payee: p.payee ?? null,
-        description: p.description,
-        category: p.category,
-        issueDate: p.issueDate.toISOString(),
-        dueDate: p.dueDate.toISOString(),
-        overdueTrackedAt: p.overdueTrackedAt?.toISOString() ?? null,
-        amount: p.amount.toString(),
-        payValue: p.payValue.toString(),
-        jurosMulta: p.jurosMulta?.toString() ?? "0",
-        daysOverdue:
-          OVERDUE_STATUSES.includes(p.status) && p.dueDate.getTime() < todayMs
+      payables: payables.map((p) => {
+        const ds = computeDisplayStatus(p.actionStatus, p.dueDate);
+        const isOverdue = p.actionStatus === null && p.dueDate.getTime() < todayMs;
+
+        return {
+          id: p.id,
+          supplierId: p.supplierId,
+          supplierName: p.supplier?.name ?? null,
+          supplierDocument: p.supplier?.document ?? null,
+          supplierDocumentType: (p.supplier?.documentType as "CNPJ" | "CPF") ?? null,
+          payee: p.payee ?? null,
+          description: p.description,
+          category: p.category,
+          issueDate: p.issueDate.toISOString(),
+          dueDate: p.dueDate.toISOString(),
+          scheduledDate: p.scheduledDate?.toISOString() ?? null,
+          amount: p.amount.toString(),
+          payValue: p.payValue.toString(),
+          jurosMulta: p.jurosMulta?.toString() ?? "0",
+          daysOverdue: isOverdue
             ? Math.floor((todayMs - p.dueDate.getTime()) / 86_400_000)
             : null,
-        paymentMethod: p.paymentMethod,
-        invoiceNumber: p.invoiceNumber,
-        notes: p.notes,
-        tags: p.tags,
-        status: p.status,
-        createdAt: p.createdAt.toISOString(),
-        updatedAt: p.updatedAt.toISOString(),
-      })),
+          paymentMethod: p.paymentMethod,
+          invoiceNumber: p.invoiceNumber,
+          notes: p.notes,
+          tags: p.tags,
+          actionStatus: p.actionStatus,
+          displayStatus: ds,
+          source: p.source,
+          createdAt: p.createdAt.toISOString(),
+          updatedAt: p.updatedAt.toISOString(),
+        };
+      }),
       total,
       page,
       pageSize,
@@ -201,9 +192,6 @@ export async function GET(request: NextRequest) {
 // =============================================================================
 // POST /api/payables — Create a new payable
 // =============================================================================
-// Validates with Zod, parses currency strings to numbers, creates the record.
-// Status always starts as PENDING — payment status changes come later.
-// =============================================================================
 
 export async function POST(request: NextRequest) {
   const ctx = await getAuthContext();
@@ -218,7 +206,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Validate the request body against our Zod schema
   const parsed = payableFormSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -229,7 +216,7 @@ export async function POST(request: NextRequest) {
 
   const data = parsed.data;
 
-  // Verify the supplier belongs to this tenant (only when supplierId is provided)
+  // Verify the supplier belongs to this tenant
   if (data.supplierId) {
     const supplier = await prisma.supplier.findFirst({
       where: { id: data.supplierId, tenantId: ctx.tenantId },
@@ -242,10 +229,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Convert currency strings to numbers for Prisma's Decimal type
   const parsedAmount = parseCurrency(data.amount);
   const parsedPayValue = parseCurrency(data.payValue);
   const jurosMulta = parsedPayValue > parsedAmount ? parsedPayValue - parsedAmount : 0;
+
+  const dueDateValue = new Date(data.dueDate + "T12:00:00");
 
   try {
     const payable = await prisma.payable.create({
@@ -260,15 +248,21 @@ export async function POST(request: NextRequest) {
         payValue: parsedPayValue,
         jurosMulta,
         issueDate: new Date(data.issueDate + "T12:00:00"),
-        dueDate: new Date(data.dueDate + "T12:00:00"),
+        dueDate: dueDateValue,
+        scheduledDate: data.scheduledDate
+          ? new Date(data.scheduledDate + "T12:00:00")
+          : dueDateValue,
         paymentMethod: data.paymentMethod,
         invoiceNumber: data.invoiceNumber || null,
         tags: data.tags,
         notes: data.notes || null,
-        status: "PENDING",
+        actionStatus: null, // No action taken — temporal status kicks in
+        source: "MANUAL",
       },
       include: { supplier: { select: { name: true } } },
     });
+
+    const ds = computeDisplayStatus(payable.actionStatus, payable.dueDate);
 
     return NextResponse.json(
       {
@@ -280,6 +274,7 @@ export async function POST(request: NextRequest) {
         category: payable.category,
         issueDate: payable.issueDate.toISOString(),
         dueDate: payable.dueDate.toISOString(),
+        scheduledDate: payable.scheduledDate?.toISOString() ?? null,
         amount: payable.amount.toString(),
         payValue: payable.payValue.toString(),
         jurosMulta: payable.jurosMulta?.toString() ?? "0",
@@ -287,7 +282,9 @@ export async function POST(request: NextRequest) {
         invoiceNumber: payable.invoiceNumber,
         notes: payable.notes,
         tags: payable.tags,
-        status: payable.status,
+        actionStatus: payable.actionStatus,
+        displayStatus: ds,
+        source: payable.source,
         createdAt: payable.createdAt.toISOString(),
         updatedAt: payable.updatedAt.toISOString(),
       },
