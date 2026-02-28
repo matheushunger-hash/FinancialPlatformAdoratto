@@ -136,6 +136,25 @@ export interface ARDashboardSummary {
   upcoming: UpcomingDay[]; // next 7 days, one entry per day with transactions
 }
 
+// --- Brand Cost Analysis types (#73) ---
+
+export interface BrandCostRow {
+  brand: string;
+  transactionCount: number;
+  grossTotal: string; // Decimal as string
+  netTotal: string;
+  feesTotal: string;
+  avgFeePct: string; // e.g., "4.09"
+  avgSettlementDays: number; // avg(expectedPaymentDate - transactionDate)
+}
+
+export interface BrandCostAnalysis {
+  brands: BrandCostRow[];
+  feesGrandTotal: string; // sum of all fees in period
+  periodFrom: string;
+  periodTo: string;
+}
+
 // --- Status config (like STATUS_CONFIG for PayableStatus) ---
 
 export const TRANSACTION_STATUS_CONFIG: Record<

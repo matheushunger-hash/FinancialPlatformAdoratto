@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { BarChart3 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ARKPICards } from "@/components/ar/ar-kpi-cards";
 import { UpcomingReceivables } from "@/components/ar/upcoming-receivables";
 import type { ARDashboardSummary } from "@/lib/ar/types";
@@ -43,6 +46,14 @@ export function ARDashboardView() {
   return (
     <div className="space-y-6">
       <ARKPICards data={data} loading={loading} error={error} />
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/dashboard/recebimentos/analise">
+            <BarChart3 className="mr-2 h-4 w-4" />
+            Análise de Custos
+          </Link>
+        </Button>
+      </div>
       <UpcomingReceivables data={data?.upcoming ?? null} loading={loading} />
     </div>
   );
