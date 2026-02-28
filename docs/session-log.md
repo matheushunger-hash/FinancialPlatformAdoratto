@@ -5,6 +5,41 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-28 — Issue #73: Brand Cost Analysis (API + Table + Chart)
+
+**What was built:**
+- Standalone analytics page at `/dashboard/recebimentos/analise` for comparing card brand fee costs
+- API endpoint with two parallel Prisma queries: `groupBy` for aggregates + raw date pairs for settlement days
+- TanStack Table with client-side sorting and fee color highlighting (red >6%, amber >5%)
+- Recharts horizontal bar chart with dark navy tooltip and compact BRL axis formatting
+- URL-driven period selection reusing the existing PeriodSelector from AP dashboard
+- Navigation link button from AR dashboard to the analysis page
+
+**Files changed:** 7 files (+602), 5 new
+- `src/lib/ar/types.ts` — added `BrandCostRow` + `BrandCostAnalysis` interfaces
+- `src/app/api/ar/analytics/brands/route.ts` — GET endpoint with groupBy brand + settlement days
+- `src/app/dashboard/recebimentos/analise/page.tsx` — page wrapper with Suspense
+- `src/components/ar/brand-analytics-view.tsx` — orchestrator with PeriodSelector + fetch
+- `src/components/ar/brand-analytics-table.tsx` — TanStack Table with client-side sorting
+- `src/components/ar/brand-cost-chart.tsx` — Recharts horizontal bar chart
+- `src/components/ar/ar-dashboard-view.tsx` — added "Análise de Custos" nav link
+
+**What went well:**
+- Clean 7-step plan executed without any deviations or errors
+- Cross-domain component reuse (PeriodSelector from AP) worked seamlessly
+- Client-side sorting was the right call for ~5-10 brand rows — no server complexity needed
+
+**Mistakes caught:**
+- None — clean execution from plan to implementation
+
+**Patterns established:**
+- Settlement days computed in JS when Prisma `groupBy` can't do date arithmetic — fetch raw date pairs in parallel
+- Client-side TanStack sorting (`getSortedRowModel()`) for small datasets vs server-side (`manualSorting: true`) for large
+- Contextual link buttons for sub-pages instead of sidebar nav items (keeps sidebar flat)
+- Fee color highlighting pattern: `> 6%` red, `> 5%` amber, default otherwise
+
+---
+
 ### 2026-02-28 — Issue #101 Phase 4: Historical Import Script
 
 **What was built:**
