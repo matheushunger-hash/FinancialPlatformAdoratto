@@ -5,6 +5,8 @@
 // Each KPICard represents one financial metric aggregated from payables.
 // =============================================================================
 
+import type { DisplayStatus } from "@/lib/payables/status";
+
 export interface KPICard {
   label: string; // e.g. "Total a Pagar"
   value: number; // Sum in R$
@@ -15,32 +17,34 @@ export interface KPICard {
 }
 
 export interface DashboardKPIs {
-  totalPayable: KPICard; // Blue — status IN (PENDING, APPROVED)
-  overdue: KPICard; // Red — due date passed, still pending/approved
-  dueSoon: KPICard; // Amber — due within 7 days
-  paidThisMonth: KPICard; // Green — paid in the selected period
-  dueInPeriod: KPICard; // Purple — active payables due in the selected period
-  insuredInPeriod: KPICard; // Teal — payables tagged "segurado" in the period
+  totalPayable: KPICard; // Blue — actionStatus IS NULL OR APPROVED (active)
+  overdue: KPICard; // Red — actionStatus IS NULL AND dueDate < today
+  dueSoon: KPICard; // Amber — actionStatus IS NULL AND due within 7 days
+  paidThisMonth: KPICard; // Green — actionStatus = PAID in period
+  dueInPeriod: KPICard; // Purple — active payables due in period
+  insuredInPeriod: KPICard; // Teal — actionStatus = HELD in period
 }
 
 // =============================================================================
 // Chart Data Types (ADR-015)
 // =============================================================================
 
-// One row per day in the stacked bar chart — each status has its R$ sum
+// One row per day in the stacked bar chart — each display status has its R$ sum
 export interface DailyPaymentData {
   date: string; // "2026-02-15" (ISO date — works across months)
-  PENDING: number;
-  APPROVED: number;
-  PAID: number;
-  OVERDUE: number;
-  REJECTED: number;
-  CANCELLED: number;
+  A_VENCER: number;
+  VENCE_HOJE: number;
+  VENCIDO: number;
+  APROVADO: number;
+  SEGURADO: number;
+  PAGO: number;
+  PROTESTADO: number;
+  CANCELADO: number;
 }
 
-// One slice in the donut chart — count + R$ value of payables per status
+// One slice in the donut chart — count + R$ value of payables per display status
 export interface StatusDistribution {
-  status: string; // "PENDING", "APPROVED", etc.
+  status: DisplayStatus;
   count: number;
   value: number; // Sum of payValue in R$
 }
@@ -52,18 +56,16 @@ export interface TopSupplier {
   total: number; // Sum of all payValues in R$
   count: number; // Number of payables for this supplier in the period
   paidTotal: number; // Sum of payValue for PAID payables
-  overdueTotal: number; // Sum of payValue for overdue payables (PENDING/APPROVED past due)
+  overdueTotal: number; // Sum of payValue for overdue payables (actionStatus IS NULL, dueDate < today)
   maxDaysOverdue: number; // Worst aging in days for this supplier
   urgencyTier: UrgencyTier; // Color tier based on overdue ratio + max aging
 }
 
 // Filter state for drill-down Sheet — built from chart click events
 export interface DrillDownFilter {
-  title: string; // Sheet header, e.g. "Pagamentos — 15/02 (Pendente)"
+  title: string; // Sheet header, e.g. "Pagamentos — 15/02 (Vencido)"
   supplierId?: string; // for supplier drill-down
-  status?: string; // for stacked bar drill-down
-  overdue?: boolean; // for aging bracket drill-down (PENDING/APPROVED + past due)
-  tag?: string; // for tag-based drill-down (e.g., "segurado")
+  displayStatus?: DisplayStatus; // for status-based drill-down
   dueDateFrom: string; // ISO date "YYYY-MM-DD"
   dueDateTo: string; // ISO date "YYYY-MM-DD"
 }

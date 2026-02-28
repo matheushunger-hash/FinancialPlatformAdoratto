@@ -16,12 +16,15 @@ import {
   CheckCircle,
   CreditCard,
   Ban,
+  Hand,
+  Gavel,
   MoreHorizontal,
   Pencil,
   RotateCcw,
   Trash2,
   Undo2,
   XCircle,
+  Unlock,
 } from "lucide-react";
 import { format, differenceInCalendarDays } from "date-fns";
 import { Badge } from "@/components/ui/badge";
@@ -47,7 +50,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { formatCNPJ, formatCPF } from "@/lib/suppliers/validation";
 import { getAvailableActions } from "@/lib/payables/transitions";
-import { EDITABLE_STATUSES, STATUS_CONFIG, type PayableListItem } from "@/lib/payables/types";
+import { DISPLAY_STATUS_CONFIG, isEditable, type PayableListItem } from "@/lib/payables/types";
 
 // =============================================================================
 // PayablesTable — TanStack Table rendering payables with shadcn UI
@@ -85,8 +88,6 @@ function formatBRL(value: string): string {
 
 // --- Helper: Tag value → display label ---
 const TAG_LABELS: Record<string, string> = {
-  protestado: "Protestado",
-  segurado: "Segurado",
   renegociado: "Renegociado",
   negativar: "Negativar",
   duplicado: "Duplicado",
@@ -99,6 +100,9 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   approve: <CheckCircle className="mr-2 h-4 w-4 text-green-600" />,
   reject: <XCircle className="mr-2 h-4 w-4" />,
   pay: <CreditCard className="mr-2 h-4 w-4" />,
+  hold: <Hand className="mr-2 h-4 w-4 text-purple-600" />,
+  release: <Unlock className="mr-2 h-4 w-4 text-blue-600" />,
+  protest: <Gavel className="mr-2 h-4 w-4 text-red-800" />,
   reopen: <RotateCcw className="mr-2 h-4 w-4" />,
   unapprove: <RotateCcw className="mr-2 h-4 w-4 text-amber-600" />,
   reverse: <Undo2 className="mr-2 h-4 w-4 text-amber-600" />,
@@ -215,12 +219,13 @@ function buildColumns(
         today.setHours(0, 0, 0, 0);
         const daysUntilDue = differenceInCalendarDays(date, today);
         const row = info.row.original;
-        const isPending = row.status === "PENDING";
+        // Color-code only when no action has been taken (temporal statuses)
+        const isTemporal = row.actionStatus === null;
 
         let colorClass = "";
-        if (isPending && daysUntilDue < 0) {
+        if (isTemporal && daysUntilDue < 0) {
           colorClass = "text-red-600 dark:text-red-400 font-medium";
-        } else if (isPending && daysUntilDue <= 7) {
+        } else if (isTemporal && daysUntilDue <= 7) {
           colorClass = "text-amber-600 dark:text-amber-400";
         }
 
@@ -269,12 +274,12 @@ function buildColumns(
       enableSorting: true,
     }),
 
-    // 8. Status (sortable)
-    columnHelper.accessor("status", {
-      id: "status",
+    // 8. Status (sortable — uses computed displayStatus)
+    columnHelper.accessor("displayStatus", {
+      id: "displayStatus",
       header: "Status",
       cell: (info) => {
-        const config = STATUS_CONFIG[info.getValue()] ?? {
+        const config = DISPLAY_STATUS_CONFIG[info.getValue()] ?? {
           label: info.getValue(),
           variant: "outline" as const,
         };
@@ -334,10 +339,8 @@ function buildColumns(
       header: () => <span className="sr-only">Ações</span>,
       cell: (info) => {
         const payable = info.row.original;
-        const actions = getAvailableActions(payable.status, userRole);
-        const canEdit = EDITABLE_STATUSES.includes(
-          payable.status as (typeof EDITABLE_STATUSES)[number],
-        );
+        const actions = getAvailableActions(payable.actionStatus, userRole, payable.displayStatus);
+        const canEdit = isEditable(payable.actionStatus);
 
         return (
           <DropdownMenu>

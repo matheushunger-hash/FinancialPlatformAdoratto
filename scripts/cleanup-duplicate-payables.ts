@@ -4,7 +4,9 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 
 // =============================================================================
-// Cleanup Duplicate Payables — One-time script
+// Cleanup Duplicate Payables — One-time script (ALREADY EXECUTED)
+// Post-migration note: `status` field was removed from the schema in Phase 7
+// of the status model refactor. Uses `as any` casts for backward compatibility.
 // =============================================================================
 // The Feb 23→24 re-import created duplicates in two ways:
 //
@@ -33,7 +35,7 @@ type PayableRow = {
   amount: unknown; // Prisma Decimal
   payValue: unknown; // Prisma Decimal
   dueDate: Date;
-  status: string;
+  actionStatus: string | null; // was `status` before refactor
   createdAt: Date;
   supplier: { name: string } | null;
 };
@@ -41,7 +43,7 @@ type PayableRow = {
 function formatRow(p: PayableRow): string {
   const created = p.createdAt.toISOString().split("T")[0];
   const due = p.dueDate.toISOString().split("T")[0];
-  return `${p.id}  created ${created}  ${p.status}  R$ ${Number(p.payValue).toFixed(2)}  due ${due}`;
+  return `${p.id}  created ${created}  ${p.actionStatus ?? "temporal"}  R$ ${Number(p.payValue).toFixed(2)}  due ${due}`;
 }
 
 function groupBy(payables: PayableRow[], keyFn: (p: PayableRow) => string): Map<string, PayableRow[]> {
@@ -76,7 +78,7 @@ async function main() {
     where: { invoiceNumber: { not: null } },
     select: {
       id: true, tenantId: true, supplierId: true, invoiceNumber: true,
-      amount: true, payValue: true, dueDate: true, status: true, createdAt: true,
+      amount: true, payValue: true, dueDate: true, actionStatus: true, createdAt: true,
       supplier: { select: { name: true } },
     },
     orderBy: { createdAt: "desc" }, // newest first
@@ -114,7 +116,7 @@ async function main() {
     where: { invoiceNumber: null },
     select: {
       id: true, tenantId: true, supplierId: true, invoiceNumber: true,
-      amount: true, payValue: true, dueDate: true, status: true, createdAt: true,
+      amount: true, payValue: true, dueDate: true, actionStatus: true, createdAt: true,
       supplier: { select: { name: true } },
     },
     orderBy: { createdAt: "asc" }, // oldest first

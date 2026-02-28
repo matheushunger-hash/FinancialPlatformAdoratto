@@ -19,6 +19,7 @@ import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import * as XLSX from "xlsx";
+import type { PaymentMethod } from "@prisma/client";
 import {
   parseImportDate,
   processImportDocument,
@@ -42,25 +43,27 @@ const fileArgIdx = process.argv.indexOf("--file");
 const FILE_PATH =
   fileArgIdx !== -1 && process.argv[fileArgIdx + 1]
     ? process.argv[fileArgIdx + 1]
-    : "planilhabase/newspreadsheet.xlsx";
+    : "exemplo.xlsx";
 
 // ---------------------------------------------------------------------------
-// Known spreadsheet column headers → field mapping
+// Known spreadsheet column headers → field mapping (matches exemplo.xlsx)
 // ---------------------------------------------------------------------------
 
 interface SpreadsheetRow {
-  "Pago?"?: string;
-  Conta?: string;
-  "Data de Entrada"?: number | string;
-  Fornecedor?: string;
-  CNPJ?: string;
-  "Nota Fiscal"?: string | number;
-  Obs?: string;
-  Data?: number | string;
-  Valor?: number | string;
-  "Valor a Pagar"?: number | string;
-  "Excluídas"?: string;
-  "Mês Ref."?: string;
+  "Pago?"?: string;                     // Col A — paid status (Sim/Não)
+  Conta?: string;                       // Col B — category (Revenda/Despesa)
+  "Data de Entrada"?: number | string;  // Col C — issue date
+  Fornecedor?: string;                  // Col D — supplier name
+  CNPJ?: string;                        // Col E — document
+  "-"?: string;                         // Col F — payment method text
+  "Nota Fiscal"?: string | number;      // Col G — invoice number
+  "Obervações"?: string;                // Col H — notes + segurado tags (typo in spreadsheet)
+  Data?: number | string;               // Col I — scheduled/payment date
+  Valor?: number | string;              // Col J — original amount
+  "Valor a Pagar"?: number | string;    // Col K — pay value
+  Juros?: number | string;              // Col L — interest/penalties
+  Vencido?: string;                     // Col M — overdue status text
+  "Data Vencimento"?: number | string;  // Col N — due date (primary source)
   [key: string]: unknown;
 }
 
@@ -71,6 +74,20 @@ interface SpreadsheetRow {
 const SALARY_PATTERNS =
   /^(SALARIO|SALÁRIO|FERIAS|FÉRIAS|RESCIS[ÃA]O|13º?\s*SAL|ADIANTAMENTO)\b/i;
 const TAX_KEYWORDS = ["FGTS", "INSS", "DAS", "ICMS ST", "SEFAZ"];
+
+// ---------------------------------------------------------------------------
+// Payment method mapping from spreadsheet text → enum value
+// ---------------------------------------------------------------------------
+
+function mapPaymentMethod(raw: string | undefined): PaymentMethod {
+  if (!raw) return "BOLETO";
+  const upper = raw.trim().toUpperCase();
+  if (upper.includes("PIX")) return "PIX";
+  if (upper.includes("BOLETO")) return "BOLETO";
+  if (upper.includes("TRANSFER")) return "TRANSFERENCIA";
+  if (upper.includes("DARF") || upper.includes("TRIBUTO") || upper.includes("IPTU") || upper.includes("ISS")) return "TAX_SLIP";
+  return "BOLETO"; // Default
+}
 
 // ---------------------------------------------------------------------------
 // Currency parsing (same as parseCurrency in validation.ts)
@@ -221,10 +238,8 @@ async function main() {
   // --- Stats ---
   const stats = {
     temporal: 0,
-    held: 0,
     paid: 0,
     created: 0,
-    updated: 0,
     suppliersExisting: 0,
     suppliersCreated: 0,
     errors: 0,
@@ -247,26 +262,35 @@ async function main() {
       }
 
       const rawAmount = row["Valor"];
-      const amountStr = String(rawAmount ?? "").trim();
-      if (!amountStr) {
+      if (rawAmount == null || String(rawAmount).trim() === "") {
         errors.push({ row: rowNum, reason: "Valor vazio" });
         stats.errors++;
         continue;
       }
-      const amount = parseCurrency(amountStr);
+      // Pass raw value (number from xlsx) directly — don't convert to string
+      // first, because parseCurrency's string path strips dots (Brazilian
+      // thousand separator), which destroys the decimal point of a JS number.
+      const amount = parseCurrency(rawAmount as string | number);
       if (isNaN(amount) || amount <= 0) {
-        errors.push({ row: rowNum, reason: `Valor inválido: "${amountStr}"` });
+        errors.push({ row: rowNum, reason: `Valor inválido: "${String(rawAmount)}"` });
         stats.errors++;
         continue;
       }
 
-      const rawDueDate = row["Data"];
+      // Due date: "Data Vencimento" (col N) is the primary source,
+      // fallback to "Data" (col I) when N is empty (e.g. paid rows)
+      // Use || (not ??) because empty string "" should fall through too
+      const rawDueDate = row["Data Vencimento"] || row["Data"];
       const dueDate = parseImportDate(rawDueDate);
       if (!dueDate) {
         errors.push({ row: rowNum, reason: `Data inválida: "${String(rawDueDate || "")}"` });
         stats.errors++;
         continue;
       }
+
+      // Scheduled/payment date from "Data" (col I) — fallback to dueDate
+      const rawScheduledDate = row["Data"];
+      const scheduledDateStr = parseImportDate(rawScheduledDate) || dueDate;
 
       // Optional fields
       const rawIssueDate = row["Data de Entrada"];
@@ -275,14 +299,15 @@ async function main() {
       const rawPayValue = row["Valor a Pagar"];
       let payValue = amount;
       if (rawPayValue != null && String(rawPayValue).trim()) {
-        const parsed = parseCurrency(String(rawPayValue));
+        const parsed = parseCurrency(rawPayValue as string | number);
         if (!isNaN(parsed) && parsed > 0) payValue = parsed;
       }
 
       const rawInvoice = row["Nota Fiscal"];
       const invoiceStr = rawInvoice != null ? String(rawInvoice).trim() : null;
 
-      const rawNotes = row["Obs"];
+      // Notes from "Obervações" (col H — typo in spreadsheet header)
+      const rawNotes = row["Obervações"];
       const notesStr = rawNotes != null ? String(rawNotes).trim() : null;
 
       const rawCategory = row["Conta"];
@@ -291,25 +316,15 @@ async function main() {
           ? "REVENDA"
           : "DESPESA";
 
-      const jurosMulta = payValue > amount ? payValue - amount : 0;
+      // Payment method from col F (e.g. "Boleto Itaú", "PIX Transferências")
+      const paymentMethod = mapPaymentMethod(row["-"] as string | undefined);
 
-      // --- Segurado detection ---
-      const rawExcludedTag = String(row["Excluídas"] || "").trim();
-      const isSegurado = /segurado/i.test(rawExcludedTag);
-
-      // Embedded date in Excluídas cell (e.g. "-segurado 10/02")
-      const embeddedDateMatch = rawExcludedTag.match(/(\d{1,2})\/(\d{1,2})/);
-      const embeddedDate = embeddedDateMatch
-        ? parseImportDate(`${embeddedDateMatch[1]}/${embeddedDateMatch[2]}`)
-        : null;
-
-      // Mês Ref takes priority, embedded date is fallback
-      const rawRefDate = row["Mês Ref."];
-      const refDate = parseImportDate(rawRefDate) ?? embeddedDate;
-
-      const tags: string[] = [];
-      if (isSegurado && !tags.includes("segurado")) {
-        tags.push("segurado");
+      // Interest from explicit "Juros" column (col L)
+      const rawJuros = row["Juros"];
+      let jurosMulta = 0;
+      if (rawJuros != null && String(rawJuros).trim()) {
+        const parsed = parseCurrency(rawJuros as string | number);
+        if (!isNaN(parsed) && parsed > 0) jurosMulta = parsed;
       }
 
       // --- Paid detection ---
@@ -318,12 +333,11 @@ async function main() {
       const paidAt = isPaid ? new Date() : null;
       const markedPaidAt = isPaid ? new Date() : null;
 
-      // Determine actionStatus
-      const importActionStatus = isPaid ? "PAID" : isSegurado ? "HELD" : null;
+      // actionStatus: only PAID or null (temporal)
+      // "Segurado" / "Vencido" are no longer special statuses — just observations
+      const importActionStatus = isPaid ? "PAID" : null;
 
-      // Count by status
       if (isPaid) stats.paid++;
-      else if (isSegurado) stats.held++;
       else stats.temporal++;
 
       // --- Resolve supplier vs payee ---
@@ -356,120 +370,18 @@ async function main() {
         }
       }
 
-      // --- Date resolution (segurado swap) ---
+      // --- Date resolution ---
       const parsedIssueDate = new Date(issueDate + "T12:00:00");
-      const vencimentoDate = new Date(dueDate + "T12:00:00");
-
-      let resolvedRefDate = refDate;
-      if (isSegurado && resolvedRefDate) {
-        const refObj = new Date(resolvedRefDate + "T12:00:00");
-        if (refObj > new Date()) {
-          refObj.setFullYear(refObj.getFullYear() - 1);
-          const yy = refObj.getFullYear();
-          const mm = String(refObj.getMonth() + 1).padStart(2, "0");
-          const dd = String(refObj.getDate()).padStart(2, "0");
-          resolvedRefDate = `${yy}-${mm}-${dd}`;
-        }
-      }
-
-      const parsedDueDate =
-        isSegurado && resolvedRefDate
-          ? new Date(resolvedRefDate + "T12:00:00")
-          : vencimentoDate;
-      const parsedOverdueTrackedAt =
-        isSegurado && resolvedRefDate ? vencimentoDate : null;
-      const parsedScheduledDate =
-        isSegurado && resolvedRefDate ? vencimentoDate : parsedDueDate;
+      const parsedDueDate = new Date(dueDate + "T12:00:00");
+      const parsedScheduledDate = new Date(scheduledDateStr + "T12:00:00");
 
       // --- In dry-run mode, just count ---
       if (!EXECUTE) {
-        // Simulate update-vs-create check
-        if (resolvedSupplierId && !resolvedSupplierId.startsWith("dry-run")) {
-          let existing = false;
-          if (invoiceStr) {
-            const match = await prisma.payable.findFirst({
-              where: { tenantId, supplierId: resolvedSupplierId, invoiceNumber: invoiceStr },
-              select: { id: true },
-            });
-            if (match) existing = true;
-          }
-          if (!existing) {
-            const match = await prisma.payable.findFirst({
-              where: { tenantId, supplierId: resolvedSupplierId, amount, dueDate: parsedDueDate },
-              select: { id: true },
-            });
-            if (match) existing = true;
-          }
-          if (existing) stats.updated++;
-          else stats.created++;
-        } else {
-          stats.created++;
-        }
+        stats.created++;
         continue;
       }
 
-      // --- Execute mode: update-vs-create ---
-      if (resolvedSupplierId) {
-        let existingPayable: { id: string; dueDate: Date; actionStatus: string | null } | null = null;
-        let matchedByInvoice = false;
-
-        // Tier 1: Match by invoice number
-        if (invoiceStr) {
-          existingPayable = await prisma.payable.findFirst({
-            where: { tenantId, supplierId: resolvedSupplierId, invoiceNumber: invoiceStr },
-            select: { id: true, dueDate: true, actionStatus: true },
-          });
-          if (existingPayable) matchedByInvoice = true;
-        }
-
-        // Tier 2: Fallback to supplier + amount + dueDate
-        if (!existingPayable) {
-          existingPayable = await prisma.payable.findFirst({
-            where: { tenantId, supplierId: resolvedSupplierId, amount, dueDate: parsedDueDate },
-            select: { id: true, dueDate: true, actionStatus: true },
-          });
-        }
-
-        if (existingPayable) {
-          const trackingDate =
-            parsedOverdueTrackedAt ??
-            (existingPayable.dueDate.getTime() !== parsedDueDate.getTime()
-              ? parsedDueDate
-              : null);
-
-          // PAID guard: never downgrade a PAID record
-          const existingIsPaid = existingPayable.actionStatus === "PAID";
-
-          await prisma.payable.update({
-            where: { id: existingPayable.id },
-            data: matchedByInvoice
-              ? {
-                  ...(trackingDate ? { overdueTrackedAt: trackingDate, scheduledDate: trackingDate } : {}),
-                  ...(tags.length > 0 ? { tags } : {}),
-                  issueDate: parsedIssueDate,
-                  amount,
-                  payValue,
-                  jurosMulta,
-                  actionStatus: existingIsPaid ? undefined : importActionStatus,
-                  paidAt: existingIsPaid ? undefined : paidAt,
-                  markedPaidAt: existingIsPaid ? undefined : markedPaidAt,
-                  description: supplierName,
-                }
-              : {
-                  ...(trackingDate ? { overdueTrackedAt: trackingDate, scheduledDate: trackingDate } : {}),
-                  ...(tags.length > 0 ? { tags } : {}),
-                  actionStatus: existingIsPaid ? undefined : importActionStatus,
-                  paidAt: existingIsPaid ? undefined : paidAt,
-                  markedPaidAt: existingIsPaid ? undefined : markedPaidAt,
-                  jurosMulta,
-                },
-          });
-          stats.updated++;
-          continue;
-        }
-      }
-
-      // --- Create new payable ---
+      // --- Create payable (every row is a distinct payable) ---
       await prisma.payable.create({
         data: {
           userId,
@@ -483,14 +395,12 @@ async function main() {
           issueDate: parsedIssueDate,
           dueDate: parsedDueDate,
           scheduledDate: parsedScheduledDate,
-          ...(parsedOverdueTrackedAt ? { overdueTrackedAt: parsedOverdueTrackedAt } : {}),
           actionStatus: importActionStatus,
           source: "IMPORT",
           category,
-          paymentMethod: "BOLETO", // Default — spreadsheet doesn't have consistent method data
+          paymentMethod,
           invoiceNumber: invoiceStr || null,
           notes: notesStr || null,
-          tags,
           paidAt,
           markedPaidAt,
         },
@@ -506,7 +416,6 @@ async function main() {
   // --- Print report ---
   console.log("Status breakdown:");
   console.log(`  temporal (a_vencer/vencido): ${stats.temporal}`);
-  console.log(`  segurado (HELD):            ${stats.held}`);
   console.log(`  paid (PAID):                ${stats.paid}`);
   console.log();
   console.log("Supplier stats:");
@@ -516,11 +425,9 @@ async function main() {
 
   if (EXECUTE) {
     console.log(`Created: ${stats.created} payables`);
-    console.log(`Updated: ${stats.updated} payables`);
     console.log(`Suppliers created: ${stats.suppliersCreated}`);
   } else {
     console.log(`Would create: ${stats.created} payables`);
-    console.log(`Would update: ${stats.updated} payables`);
   }
 
   console.log(`Errors: ${stats.errors}`);

@@ -5,6 +5,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DISPLAY_STATUS_CONFIG } from "@/lib/payables/status";
 import type { PayableListItem } from "@/lib/payables/types";
 
 // -- Helpers --
@@ -19,8 +20,8 @@ function formatDateBR(iso: string): string {
   return `${dd}/${m}/${y}`;
 }
 
-// Active statuses that appear in the weekly chart (PENDING/APPROVED with dueDate check)
-const ACTIVE_STATUSES = "PENDING,APPROVED,PAID";
+// Active display statuses shown in the weekly chart (everything except cancelled/protested)
+const ACTIVE_DISPLAY_STATUSES = "A_VENCER,VENCE_HOJE,VENCIDO,APROVADO,SEGURADO,PAGO";
 
 // Sortable column keys (NF is intentionally excluded)
 type SortField = "supplierName" | "payValue" | "dueDate" | "status";
@@ -55,7 +56,7 @@ export function WeekTopInvoices({
     const params = new URLSearchParams({
       dueDateFrom: weekStart,
       dueDateTo: weekEnd,
-      status: ACTIVE_STATUSES,
+      displayStatus: ACTIVE_DISPLAY_STATUSES,
       sort: "payValue",
       order: "desc",
       pageSize: "10",
@@ -82,12 +83,13 @@ export function WeekTopInvoices({
     return (p.daysOverdue ?? 0) > 0;
   }
 
-  // Display status rank: groups Vencido, Pendente, Pago as distinct categories
+  // Display status rank: groups by urgency for sorting
   // Lower rank = more urgent (Vencido first when desc)
   function statusRank(p: PayableListItem): number {
-    if (p.status === "PAID") return 2;           // Pago
-    if ((p.daysOverdue ?? 0) > 0) return 0;      // Vencido
-    return 1;                                      // Pendente
+    if (p.displayStatus === "PAGO") return 3;
+    if (p.displayStatus === "VENCIDO") return 0;
+    if (p.displayStatus === "VENCE_HOJE") return 1;
+    return 2; // A_VENCER, APROVADO, SEGURADO, etc.
   }
 
   // Client-side sort (only 10 items, no need to re-fetch)
@@ -235,28 +237,17 @@ export function WeekTopInvoices({
                       {formatDateBR(p.dueDate)}
                     </td>
                     <td className="py-1.5 text-right">
-                      {overdue ? (
-                        <Badge
-                          variant="destructive"
-                          className="inline-flex w-[62px] justify-center text-[10px] px-1.5 py-0"
-                        >
-                          Vencido
-                        </Badge>
-                      ) : p.status === "PAID" ? (
-                        <Badge
-                          variant="default"
-                          className="inline-flex w-[62px] justify-center bg-emerald-500/15 text-[10px] text-emerald-700 px-1.5 py-0 hover:bg-emerald-500/15 dark:text-emerald-400"
-                        >
-                          Pago
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="inline-flex w-[62px] justify-center text-[10px] px-1.5 py-0"
-                        >
-                          Pendente
-                        </Badge>
-                      )}
+                      {(() => {
+                        const dsCfg = DISPLAY_STATUS_CONFIG[p.displayStatus];
+                        return (
+                          <Badge
+                            variant={dsCfg?.variant ?? "outline"}
+                            className="inline-flex w-[72px] justify-center text-[10px] px-1.5 py-0"
+                          >
+                            {dsCfg?.label ?? p.displayStatus}
+                          </Badge>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

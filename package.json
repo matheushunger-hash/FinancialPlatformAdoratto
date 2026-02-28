@@ -25,7 +25,8 @@
     "db:migrate-pendente-payables": "npx tsx scripts/migrate-pendente-payables.ts",
     "db:cleanup-dupes": "npx tsx scripts/cleanup-duplicate-payables.ts",
     "db:migrate-action-status": "npx tsx scripts/migrate-action-status.ts",
-    "db:import-historical": "npx tsx scripts/import-historical.ts"
+    "db:import-historical": "npx tsx scripts/import-historical.ts",
+    "db:mark-overdue": "npx tsx scripts/mark-overdue-manual.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

@@ -20,13 +20,14 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { PayableFilters } from "@/lib/payables/types";
+import type { DisplayStatus } from "@/lib/payables/status";
 
 // =============================================================================
 // PayablesFilters — Filter controls for the payables table
 // =============================================================================
 // Dumb presentational component: receives current filters + onChange callback
 // from the orchestrator (payables-view.tsx). Two rows:
-//   Row 1: Quick-filter pills (status / tag) — mutually exclusive
+//   Row 1: Quick-filter pills (displayStatus) — mutually exclusive
 //   Row 2: Advanced filters (category, payment method, date range, clear)
 // =============================================================================
 
@@ -35,16 +36,18 @@ interface PayablesFiltersProps {
   onFiltersChange: (filters: PayableFilters) => void;
 }
 
-// Quick-filter pills: each one sets status, tag, and/or overdue.
-// "Todos" clears all three but keeps advanced filters (category, payment, dates).
-const QUICK_FILTERS = [
-  { key: "all", label: "Todos", status: undefined, tag: undefined, overdue: undefined },
-  { key: "overdue", label: "Vencidos", status: undefined, tag: undefined, overdue: true as const },
-  { key: "pending", label: "Pendentes", status: "PENDING" as const, tag: undefined, overdue: undefined },
-  { key: "approved", label: "Aprovados", status: "APPROVED" as const, tag: undefined, overdue: undefined },
-  { key: "paid", label: "Pagos", status: "PAID" as const, tag: undefined, overdue: undefined },
-  { key: "protestado", label: "Protestados", status: undefined, tag: "protestado", overdue: undefined },
-] as const;
+// Quick-filter pills: each one sets displayStatus.
+// "Todos" clears displayStatus but keeps advanced filters (category, payment, dates).
+const QUICK_FILTERS: { key: string; label: string; displayStatus?: DisplayStatus }[] = [
+  { key: "all", label: "Todos" },
+  { key: "VENCIDO", label: "Vencidos", displayStatus: "VENCIDO" },
+  { key: "VENCE_HOJE", label: "Vence Hoje", displayStatus: "VENCE_HOJE" },
+  { key: "A_VENCER", label: "A Vencer", displayStatus: "A_VENCER" },
+  { key: "APROVADO", label: "Aprovados", displayStatus: "APROVADO" },
+  { key: "PAGO", label: "Pagos", displayStatus: "PAGO" },
+  { key: "SEGURADO", label: "Segurados", displayStatus: "SEGURADO" },
+  { key: "PROTESTADO", label: "Protestados", displayStatus: "PROTESTADO" },
+];
 
 // Payment method labels for the dropdown (display-friendly names)
 const PAYMENT_METHOD_OPTIONS = [
@@ -54,7 +57,8 @@ const PAYMENT_METHOD_OPTIONS = [
   { value: "CARTAO", label: "Cartão" },
   { value: "DINHEIRO", label: "Dinheiro" },
   { value: "CHEQUE", label: "Cheque" },
-  // TODO: split BOLETO into Itaú/Outros when bank field is added
+  { value: "TAX_SLIP", label: "Guia Tributária" },
+  { value: "PAYROLL", label: "Folha de Pagamento" },
 ];
 
 export function PayablesFilters({
@@ -63,12 +67,8 @@ export function PayablesFilters({
 }: PayablesFiltersProps) {
   // Determine which quick-filter pill is active
   function getActiveQuickFilter(): string {
-    if (filters.overdue) return "overdue";
-    if (filters.tag === "protestado") return "protestado";
-    if (filters.status === "PENDING") return "pending";
-    if (filters.status === "APPROVED") return "approved";
-    if (filters.status === "PAID") return "paid";
-    if (!filters.status && !filters.tag && !filters.overdue) return "all";
+    if (filters.displayStatus) return filters.displayStatus;
+    if (!filters.displayStatus) return "all";
     return "";
   }
 
@@ -76,9 +76,7 @@ export function PayablesFilters({
 
   // Check if any filter is active (for showing "Limpar" button)
   const hasAnyFilter =
-    filters.status !== undefined ||
-    filters.tag !== undefined ||
-    filters.overdue !== undefined ||
+    filters.displayStatus !== undefined ||
     filters.category !== undefined ||
     filters.paymentMethod !== undefined ||
     filters.dueDateFrom !== undefined ||
@@ -86,13 +84,9 @@ export function PayablesFilters({
 
   // --- Handlers ---
 
-  function handleQuickFilter(
-    status: PayableFilters["status"],
-    tag: string | undefined,
-    overdue: boolean | undefined,
-  ) {
-    // Keep advanced filters, only replace status + tag + overdue
-    onFiltersChange({ ...filters, status, tag, overdue: overdue || undefined });
+  function handleQuickFilter(displayStatus: DisplayStatus | undefined) {
+    // Keep advanced filters, only replace displayStatus
+    onFiltersChange({ ...filters, displayStatus });
   }
 
   function handleCategoryChange(value: string) {
@@ -137,7 +131,7 @@ export function PayablesFilters({
             key={qf.key}
             variant={activeQuick === qf.key ? "default" : "outline"}
             className="cursor-pointer select-none"
-            onClick={() => handleQuickFilter(qf.status, qf.tag, qf.overdue)}
+            onClick={() => handleQuickFilter(qf.displayStatus)}
           >
             {qf.label}
           </Badge>

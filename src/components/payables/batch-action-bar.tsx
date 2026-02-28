@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, CreditCard, Download, X } from "lucide-react";
+import { CheckCircle, CreditCard, Download, Hand, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PayableListItem } from "@/lib/payables/types";
 
@@ -20,6 +20,7 @@ interface BatchActionBarProps {
   selectedPayables: PayableListItem[];
   userRole: string;
   onApprove: () => void;
+  onHold: () => void;
   onPay: () => void;
   onExport: () => void;
   onClear: () => void;
@@ -31,6 +32,7 @@ export function BatchActionBar({
   selectedPayables,
   userRole,
   onApprove,
+  onHold,
   onPay,
   onExport,
   onClear,
@@ -38,11 +40,12 @@ export function BatchActionBar({
   if (selectedCount === 0) return null;
 
   // Count eligible items for each action
+  // actionStatus === null means no action taken (temporal — eligible for approve/hold)
   const pendingCount = selectedPayables.filter(
-    (p) => p.status === "PENDING",
+    (p) => p.actionStatus === null,
   ).length;
   const payableCount = selectedPayables.filter(
-    (p) => p.status === "PENDING" || p.status === "APPROVED",
+    (p) => p.actionStatus === null || p.actionStatus === "APPROVED",
   ).length;
 
   // Format total as BRL
@@ -72,6 +75,18 @@ export function BatchActionBar({
         >
           <CheckCircle className="mr-2 h-4 w-4" />
           Aprovar ({pendingCount})
+        </Button>
+      )}
+
+      {userRole === "ADMIN" && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onHold}
+          disabled={pendingCount === 0}
+        >
+          <Hand className="mr-2 h-4 w-4" />
+          Segurar ({pendingCount})
         </Button>
       )}
 

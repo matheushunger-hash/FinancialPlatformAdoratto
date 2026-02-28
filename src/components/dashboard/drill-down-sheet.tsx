@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { STATUS_CONFIG } from "@/lib/payables/types";
+import { DISPLAY_STATUS_CONFIG } from "@/lib/payables/status";
 import type { PayableListItem, PayablesListResponse } from "@/lib/payables/types";
 import type { DrillDownFilter } from "@/lib/dashboard/types";
 
@@ -32,14 +32,16 @@ import type { DrillDownFilter } from "@/lib/dashboard/types";
 
 const PAGE_SIZE = 15;
 
-// Status → left border color. Complete class strings so Tailwind can detect them.
+// DisplayStatus → left border color. Complete class strings so Tailwind can detect them.
 const STATUS_BORDER: Record<string, string> = {
-  PENDING: "border-l-amber-500",
-  APPROVED: "border-l-blue-500",
-  PAID: "border-l-green-500",
-  OVERDUE: "border-l-red-500",
-  REJECTED: "border-l-gray-500",
-  CANCELLED: "border-l-gray-400",
+  A_VENCER: "border-l-blue-800",
+  VENCE_HOJE: "border-l-amber-500",
+  VENCIDO: "border-l-red-500",
+  APROVADO: "border-l-blue-500",
+  SEGURADO: "border-l-purple-600",
+  PAGO: "border-l-emerald-600",
+  PROTESTADO: "border-l-red-900",
+  CANCELADO: "border-l-gray-400",
 };
 
 // Sort options available in the drill-down panel (key must match API SORT_MAP)
@@ -64,9 +66,7 @@ function formatDate(isoDate: string): string {
 function buildPayablesUrl(filter: DrillDownFilter): string {
   const params = new URLSearchParams();
   if (filter.supplierId) params.set("supplierId", filter.supplierId);
-  if (filter.status) params.set("status", filter.status);
-  if (filter.overdue) params.set("overdue", "true");
-  if (filter.tag) params.set("tag", filter.tag);
+  if (filter.displayStatus) params.set("displayStatus", filter.displayStatus);
   params.set("dueDateFrom", filter.dueDateFrom);
   params.set("dueDateTo", filter.dueDateTo);
   return `/dashboard/contas-a-pagar?${params.toString()}`;
@@ -135,9 +135,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
 
       const params = new URLSearchParams();
       if (filter.supplierId) params.set("supplierId", filter.supplierId);
-      if (filter.status) params.set("status", filter.status);
-      if (filter.overdue) params.set("overdue", "true");
-      if (filter.tag) params.set("tag", filter.tag);
+      if (filter.displayStatus) params.set("displayStatus", filter.displayStatus);
       params.set("dueDateFrom", filter.dueDateFrom);
       params.set("dueDateTo", filter.dueDateTo);
       params.set("page", String(pageToFetch));
@@ -205,7 +203,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
 
   const isOpen = filter !== null;
   const isSupplierDrillDown = !!filter?.supplierId;
-  const statusCfg = filter?.status ? STATUS_CONFIG[filter.status.toUpperCase()] : null;
+  const statusCfg = filter?.displayStatus ? DISPLAY_STATUS_CONFIG[filter.displayStatus] : null;
 
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
@@ -332,11 +330,9 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
           {!loading && !error && payables.length > 0 && (
             <div className="space-y-2">
               {payables.map((p) => {
-                const cfg = STATUS_CONFIG[p.status.toUpperCase()];
+                const cfg = DISPLAY_STATUS_CONFIG[p.displayStatus];
                 const isOverdue = p.daysOverdue != null && p.daysOverdue > 0;
-                const borderColor = isOverdue
-                  ? "border-l-red-500"
-                  : (STATUS_BORDER[p.status.toUpperCase()] ?? "border-l-gray-300");
+                const borderColor = STATUS_BORDER[p.displayStatus] ?? "border-l-gray-300";
                 const primaryText = isSupplierDrillDown
                   ? p.description
                   : (p.supplierName ?? p.payee ?? "—");
@@ -382,7 +378,7 @@ export function DrillDownSheet({ filter, onOpenChange }: DrillDownSheetProps) {
                         {formatBRL(Number(p.payValue))}
                       </span>
                       <Badge variant={cfg?.variant ?? "outline"} className="shrink-0">
-                        {cfg?.label ?? p.status}
+                        {cfg?.label ?? p.displayStatus}
                       </Badge>
                     </div>
                     {/* Row 2: secondary text + date + overdue pill */}

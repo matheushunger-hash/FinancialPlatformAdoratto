@@ -5,6 +5,33 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-02-28 — Issue #72: AR Overdue Detection Cron Job
+
+**What was built:**
+- Daily cron job that marks stale PENDING card transactions as OVERDUE (D+1 rule)
+- Pure job logic in `src/lib/ar/jobs/markOverdue.ts` — reusable by both API and CLI
+- GET endpoint at `/api/ar/jobs/mark-overdue` protected by CRON_SECRET header
+- Manual CLI script `scripts/mark-overdue-manual.ts` with --dry-run (default) and --execute modes
+- Vercel cron config (`vercel.json`) scheduled at 11:00 UTC (08:00 BRT)
+- Schema change: AuditLog.userId made optional for system jobs
+
+**Also resolved:** 130 pre-existing TypeScript errors from the display status refactoring — committed `status.ts` and updated 26 files.
+
+**Files changed:** 34 files (8 for #72, 26 for refactoring fixes)
+
+**Patterns established:**
+- **Cron job architecture**: pure function in `lib/<domain>/jobs/` → thin API route → manual script. Inject Prisma client as parameter for testability.
+- **System job AuditLog**: `userId: null` for automated actions (requires optional userId)
+- **CRON_SECRET auth**: `Authorization: Bearer <CRON_SECRET>` header validation (not user auth) for system endpoints
+- **Per-tenant audit trail**: batch operations create one AuditLog per affected tenant
+- **Date boundary for overdue**: `expectedPaymentDate < todayStart` (midnight UTC) — cron must run after 03:00 UTC for BRT date safety
+
+**Mistakes caught:**
+- Worktree didn't have `.env` file — copied from main project
+- Pre-commit tsc hook blocked commit due to 130 pre-existing errors in committed code from an incomplete refactoring — resolved by committing the missing `status.ts` and updated files
+
+---
+
 ### 2026-02-28 — Issue #73: Brand Cost Analysis (API + Table + Chart)
 
 **What was built:**

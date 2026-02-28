@@ -26,6 +26,7 @@ import type {
   TopSupplier,
   UrgencyTier,
 } from "@/lib/dashboard/types";
+import { DISPLAY_STATUS_CONFIG, type DisplayStatus } from "@/lib/payables/status";
 
 // =============================================================================
 // Dashboard Charts Component — Stripe/Linear aesthetic (#39)
@@ -43,25 +44,22 @@ function toISODate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-// -- Status color map (updated for Stripe palette) --
-const STATUS_COLORS: Record<string, string> = {
-  PENDING: "#F59E0B", // amber
-  APPROVED: "#635BFF", // purple (was blue)
-  PAID: "#00D4AA", // teal (was green)
-  OVERDUE: "#DF1B41", // red (updated)
-  REJECTED: "#6b7280", // gray
-  CANCELLED: "#9ca3af", // light gray
+// -- Status color map (DisplayStatus keys) --
+const STATUS_COLORS: Record<DisplayStatus, string> = {
+  A_VENCER: "#1E40AF",
+  VENCE_HOJE: "#D97706",
+  VENCIDO: "#DC2626",
+  APROVADO: "#3b82f6",
+  SEGURADO: "#7C3AED",
+  PAGO: "#059669",
+  PROTESTADO: "#991B1B",
+  CANCELADO: "#6B7280",
 };
 
-// Portuguese labels for the legend and tooltips
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: "Pendente",
-  APPROVED: "Aprovado",
-  PAID: "Pago",
-  OVERDUE: "Vencido",
-  REJECTED: "Rejeitado",
-  CANCELLED: "Cancelado",
-};
+// Portuguese labels for the legend and tooltips — derived from DISPLAY_STATUS_CONFIG
+const STATUS_LABELS: Record<string, string> = Object.fromEntries(
+  Object.entries(DISPLAY_STATUS_CONFIG).map(([key, cfg]) => [key, cfg.label]),
+);
 
 // Urgency-tier palette — same as weekly-calendar.tsx
 const PENDING_TIER_COLORS: Record<UrgencyTier, string> = {
@@ -71,16 +69,18 @@ const PENDING_TIER_COLORS: Record<UrgencyTier, string> = {
   red: "#DC2626",
 };
 const OVERDUE_COLOR = "#EF4444";
-const PAID_COLOR = "#00D4AA"; // teal — matches PAID in STATUS_COLORS
+const PAID_COLOR = "#059669"; // green — matches PAGO in STATUS_COLORS
 
-const ALL_STATUSES = [
-  "PENDING",
-  "APPROVED",
-  "PAID",
-  "OVERDUE",
-  "REJECTED",
-  "CANCELLED",
-] as const;
+const ALL_STATUSES: DisplayStatus[] = [
+  "A_VENCER",
+  "VENCE_HOJE",
+  "VENCIDO",
+  "APROVADO",
+  "SEGURADO",
+  "PAGO",
+  "PROTESTADO",
+  "CANCELADO",
+];
 
 // -- Helpers --
 
@@ -237,7 +237,7 @@ function CustomAgingTooltip({
   );
 }
 
-// -- Exploded pie slice — offsets the OVERDUE sector outward --
+// -- Exploded pie slice — offsets the VENCIDO sector outward --
 
 const RADIAN = Math.PI / 180;
 const OVERDUE_OFFSET = 6; // pixels to "explode" the overdue slice
@@ -245,7 +245,7 @@ const OVERDUE_OFFSET = 6; // pixels to "explode" the overdue slice
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ExplodedSector(props: any) {
   const { cx, cy, midAngle, payload, ...rest } = props;
-  const isOverdue = payload?.status === "OVERDUE";
+  const isOverdue = payload?.status === "VENCIDO";
   const offset = isOverdue ? OVERDUE_OFFSET : 0;
   const offsetX = offset * Math.cos(-midAngle * RADIAN);
   const offsetY = offset * Math.sin(-midAngle * RADIAN);
@@ -507,18 +507,18 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                         onClick={() => {
                           if (!onDrillDown || !from || !to) return;
                           const label = STATUS_LABELS[entry.status] ?? entry.status;
-                          // OVERDUE uses compound filter (status IN PENDING/APPROVED + past due)
-                          if (entry.status === "OVERDUE") {
+                          // VENCIDO uses a wider date range (all-time overdue)
+                          if (entry.status === "VENCIDO") {
                             onDrillDown({
                               title: label,
-                              overdue: true,
+                              displayStatus: "VENCIDO",
                               dueDateFrom: "2020-01-01",
                               dueDateTo: toISODate(new Date()),
                             });
                           } else {
                             onDrillDown({
                               title: label,
-                              status: entry.status,
+                              displayStatus: entry.status,
                               dueDateFrom: from,
                               dueDateTo: to,
                             });
@@ -799,7 +799,7 @@ export function DashboardCharts({ charts, agingBrackets, loading, from, to, onDr
                         title: `Vencidos — ${bracket.label}`,
                         dueDateFrom,
                         dueDateTo,
-                        overdue: true,
+                        displayStatus: "VENCIDO",
                       });
                     }}
                   >

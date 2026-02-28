@@ -7,22 +7,11 @@
 // =============================================================================
 
 import { formatCNPJ, formatCPF } from "@/lib/suppliers/validation";
+import { DISPLAY_STATUS_CONFIG } from "@/lib/payables/status";
 import type { PayableListItem } from "@/lib/payables/types";
-
-// --- Status label map (same as the table uses) ---
-const STATUS_LABELS: Record<string, string> = {
-  PENDING: "Pendente",
-  APPROVED: "Aprovado",
-  REJECTED: "Rejeitado",
-  PAID: "Pago",
-  OVERDUE: "Vencido",
-  CANCELLED: "Cancelado",
-};
 
 // --- Tag label map ---
 const TAG_LABELS: Record<string, string> = {
-  protestado: "Protestado",
-  segurado: "Segurado",
   renegociado: "Renegociado",
   negativar: "Negativar",
   duplicado: "Duplicado",
@@ -38,6 +27,8 @@ const METHOD_LABELS: Record<string, string> = {
   CARTAO: "Cartão",
   DINHEIRO: "Dinheiro",
   CHEQUE: "Cheque",
+  TAX_SLIP: "Guia (DAS/DARF)",
+  PAYROLL: "Folha de Pagamento",
 };
 
 /**
@@ -87,14 +78,21 @@ export function exportPayablesToCSV(payables: PayableListItem[]): void {
     "Descrição",
     "Categoria",
     "Vencimento",
-    "Data Rastreamento",
+    "Data Programada",
     "Valor Original",
     "Valor a Pagar",
     "Status",
+    "Origem",
     "Tags",
     "Forma de Pagamento",
     "Nota Fiscal",
   ];
+
+  const sourceLabels: Record<string, string> = {
+    IMPORT: "Importação",
+    MANUAL: "Manual",
+    BANK_API: "API Bancária",
+  };
 
   const rows = payables.map((p) => [
     escapeCSV(p.supplierName ?? p.payee ?? ""),
@@ -108,10 +106,11 @@ export function exportPayablesToCSV(payables: PayableListItem[]): void {
     escapeCSV(p.description),
     escapeCSV(p.category === "REVENDA" ? "Revenda" : "Despesa"),
     formatDateBR(p.dueDate),
-    p.overdueTrackedAt ? formatDateBR(p.overdueTrackedAt) : "",
+    p.scheduledDate ? formatDateBR(p.scheduledDate) : "",
     formatBRNumber(p.amount),
     formatBRNumber(p.payValue),
-    STATUS_LABELS[p.status] ?? p.status,
+    DISPLAY_STATUS_CONFIG[p.displayStatus]?.label ?? p.displayStatus,
+    sourceLabels[p.source] ?? p.source,
     escapeCSV(
       p.tags.map((t) => TAG_LABELS[t] ?? t).join(", "),
     ),
