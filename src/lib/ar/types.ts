@@ -119,6 +119,13 @@ export interface ARFeesKPI {
   avgPct: string; // Decimal as string (e.g., "4.09")
 }
 
+export interface UpcomingDay {
+  date: string; // "yyyy-MM-dd"
+  count: number; // transaction count
+  netAmount: string; // Decimal as string
+  topBrand: string; // most frequent brand that day
+}
+
 export interface ARDashboardSummary {
   totalPending: ARDashboardKPI; // All PENDING transactions
   receivableToday: ARDashboardKPI; // expectedPaymentDate = today, PENDING or CONFIRMED
@@ -126,6 +133,7 @@ export interface ARDashboardSummary {
   feesThisMonth: ARFeesKPI; // feeAmount sum + avg feePct for current calendar month
   overdueCount: number; // Count where status = OVERDUE
   weekOverWeekPct: string; // Formatted: "+3.2" or "-1.5" or "0"
+  upcoming: UpcomingDay[]; // next 7 days, one entry per day with transactions
 }
 
 // --- Status config (like STATUS_CONFIG for PayableStatus) ---

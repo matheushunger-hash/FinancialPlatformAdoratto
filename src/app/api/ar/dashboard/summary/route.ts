@@ -54,7 +54,14 @@ export async function GET() {
     prevWeekStart.setDate(prevWeekStart.getDate() - 7);
     const prevWeekEnd = new Date(weekStart.getTime() - 1);
 
-    // ---- 7 parallel queries ----
+    // Shared scope for upcoming queries (next 7 days, PENDING)
+    const upcomingScope = {
+      ...tenantScope,
+      status: "PENDING" as const,
+      expectedPaymentDate: { gte: todayStart, lte: sevenDaysEnd },
+    };
+
+    // ---- 9 parallel queries ----
     const [
       totalPending,
       receivableToday,
@@ -63,6 +70,8 @@ export async function GET() {
       overdueCount,
       currentWeekNet,
       prevWeekNet,
+      upcomingByDay,
+      upcomingBrands,
     ] = await Promise.all([
       // 1. Total Pending — all PENDING transactions
       prisma.cardTransaction.aggregate({
@@ -128,7 +137,57 @@ export async function GET() {
         },
         _sum: { netAmount: true },
       }),
+
+      // 8. Upcoming — per-day aggregates for next 7 days
+      prisma.cardTransaction.groupBy({
+        by: ["expectedPaymentDate"],
+        where: upcomingScope,
+        _sum: { netAmount: true },
+        _count: true,
+        orderBy: { expectedPaymentDate: "asc" },
+      }),
+
+      // 9. Upcoming brands — raw date+brand pairs to compute top brand per day
+      prisma.cardTransaction.findMany({
+        where: upcomingScope,
+        select: { expectedPaymentDate: true, brand: true },
+      }),
     ]);
+
+    // ---- Compute top brand per day for upcoming table ----
+    // Group brand occurrences by date string, then pick the most frequent per day
+    const brandsByDay = new Map<string, Map<string, number>>();
+    for (const row of upcomingBrands) {
+      const dayKey = row.expectedPaymentDate.toISOString().split("T")[0];
+      if (!brandsByDay.has(dayKey)) brandsByDay.set(dayKey, new Map());
+      const counts = brandsByDay.get(dayKey)!;
+      counts.set(row.brand, (counts.get(row.brand) ?? 0) + 1);
+    }
+
+    function topBrandForDay(dayKey: string): string {
+      const counts = brandsByDay.get(dayKey);
+      if (!counts || counts.size === 0) return "—";
+      let maxBrand = "";
+      let maxCount = 0;
+      for (const [brand, count] of counts) {
+        if (count > maxCount) {
+          maxCount = count;
+          maxBrand = brand;
+        }
+      }
+      return maxBrand;
+    }
+
+    // Build upcoming array from groupBy results
+    const upcoming = upcomingByDay.map((group) => {
+      const dayKey = group.expectedPaymentDate.toISOString().split("T")[0];
+      return {
+        date: dayKey,
+        count: group._count,
+        netAmount: (group._sum.netAmount ?? 0).toString(),
+        topBrand: topBrandForDay(dayKey),
+      };
+    });
 
     // ---- Assemble response ----
     const delta = computeDelta(
@@ -155,6 +214,7 @@ export async function GET() {
       },
       overdueCount,
       weekOverWeekPct: delta > 0 ? `+${delta}` : `${delta}`,
+      upcoming,
     };
 
     return NextResponse.json({ data: summary });
