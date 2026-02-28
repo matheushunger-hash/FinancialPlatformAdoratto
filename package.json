@@ -23,7 +23,9 @@
     "db:find-dupes": "npx tsx scripts/find-duplicate-suppliers.ts",
     "db:create-tax-suppliers": "npx tsx scripts/create-tax-suppliers.ts",
     "db:migrate-pendente-payables": "npx tsx scripts/migrate-pendente-payables.ts",
-    "db:cleanup-dupes": "npx tsx scripts/cleanup-duplicate-payables.ts"
+    "db:cleanup-dupes": "npx tsx scripts/cleanup-duplicate-payables.ts",
+    "db:migrate-action-status": "npx tsx scripts/migrate-action-status.ts",
+    "db:import-historical": "npx tsx scripts/import-historical.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
