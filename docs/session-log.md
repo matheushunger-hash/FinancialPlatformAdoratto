@@ -5,6 +5,27 @@ These logs document what was built, lessons learned, and patterns established in
 
 ---
 
+### 2026-03-02 — Issue #74: Receivable Calendar — API + 30-Day Timeline
+
+**What was built:**
+- GET endpoint at `/api/ar/dashboard/calendar` with two parallel `groupBy` queries (date+status and date+brand) returning per-day receivable aggregates
+- `<ReceivableCalendar />` component — horizontally scrollable 30-day timeline with color-coded day cards
+- Dashboard integration with independent loading (calendar + summary fetch in parallel)
+
+**Files changed:** 3 files (1 new API route, 1 new component, 1 edited orchestrator)
+
+**Patterns established:**
+- **Calendar timeline layout**: horizontal flex scroll with gradient fade hint on right edge (`mask-image` alternative: `bg-gradient-to-l from-card to-transparent`)
+- **Color priority for multi-status days**: red (overdue) > amber (pending) > green (confirmed) > gray (no data) — highest alert wins
+- **Compact currency formatter**: `formatCompactBRL` using k/M suffixes for space-constrained UI cards
+- **Independent parallel fetches**: separate loading states for each API call in an orchestrator — if one fails, the other still renders
+- **`useState` initializer for stable date**: `const [today] = useState(() => ...)` prevents hydration mismatch and stays stable across re-renders
+- **Pre-defined types advantage**: `CalendarDay`, `CalendarDayBrand`, `CalendarResponse` were already in `types.ts` from schema planning, making implementation faster
+
+**Mistakes caught:** None — clean implementation following established plan.
+
+---
+
 ### 2026-02-28 — Issue #72: AR Overdue Detection Cron Job
 
 **What was built:**
